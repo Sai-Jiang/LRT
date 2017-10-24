@@ -224,8 +224,9 @@ void ReSym2Src(Receiver *rx)
                 RestDstLen = *((uint16_t *)psrc);
                 if (RestDstLen == 0) break;
                 else {
-                    psd = malloc(sizeof(SrcData) + RestDstLen);
+                    psd = malloc(sizeof(SrcData) + RestDstLen - sizeof(psd->Len));
                     pdst = psd->data;
+                    memset(psd, 0, RestDstLen);
                 }
             }
 
@@ -277,7 +278,7 @@ int main()
             printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
 
             int i;
-            for (i = 0; i < PADLEN && ud.buf[i] == ('a' + ud.seq % 26); i++);
+            for (i = 0; i < PADLEN && ud.buf[i] == ('a' + (ud.seq * 3 / 2) % 26); i++);
             assert(i == PADLEN);
         }
     } while (seq < LOOPCNT ||

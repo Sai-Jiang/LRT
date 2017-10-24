@@ -257,17 +257,17 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 1000); // equals to 1300Bps
+    TokenBucketInit(&tb, 2000); // equals to 1300Bps
 
     uint32_t seq = 0;
 
     UserData_t ud;
 
     do {
-        if (seq < LOOPCNT && GetToken(&tb, sizeof(ud)))  {
+        while (seq < LOOPCNT && GetToken(&tb, sizeof(ud)))  {
             ud.seq = seq++;
             ud.ts = GetTS();
-            memset(ud.buf, 'a' + ud.seq % 26, PADLEN);
+            memset(ud.buf, 'a' + (ud.seq * 3 / 2) % 26, PADLEN);
             Send(tx, &ud, sizeof(ud));
         }
 
