@@ -186,7 +186,7 @@ void MovSym2Enc(Transmitter *tx)
 
         Symbol *sym = NULL;
         for (iqueue_head *p = tx->sym_queue.next, *nxt;
-             p != &tx->sym_queue && encwrapper->lrank < tx->maxsymbolsize; p = nxt) {
+             p != &tx->sym_queue && encwrapper->lrank < tx->maxsymbol; p = nxt) {
             nxt = p->next;
             sym = iqueue_entry(p, Symbol, qnode);
 
