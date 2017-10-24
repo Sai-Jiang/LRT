@@ -42,8 +42,8 @@ Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     addr.sin_port = htons(SRC_SPORT);
     connect(rx->SignalSock, (struct sockaddr *)&addr, sizeof(addr));
 
-//        int flags = fcntl(rx->DataSock, F_GETFL, 0);
-//        fcntl(rx->DataSock, F_SETFL, flags | O_NONBLOCK);
+    int flags = fcntl(rx->DataSock, F_GETFL, 0);
+    fcntl(rx->DataSock, F_SETFL, flags | O_NONBLOCK);
 
     return rx;
 }
@@ -62,44 +62,49 @@ void Receiver_Release(Receiver *rx)
     free(rx);
 }
 
-void CheckPkt(Receiver *rx)
-{
+void CheckPkt(Receiver *rx) {
     size_t pktbuflen = sizeof(Packet) + rx->payload_size;
 
+    long EntTS = GetTS();
+
+    while (GetTS() - EntTS <= 1) {
         ssize_t nbytes = read(rx->DataSock, rx->pktbuf, pktbuflen);
-        if (nbytes < 0) return;
+        if (nbytes < 0) break;
         assert(nbytes == sizeof(Packet) + rx->payload_size);
 
         // Discard the out-of-date packet
-        if (rx->pktbuf->id < rx->ExpectedBlockID) return;
+        if (rx->pktbuf->id < rx->ExpectedBlockID) break;
 
         ChainedPkt *cpkt = malloc(sizeof(ChainedPkt));
         cpkt->pkt = malloc(pktbuflen);
         memcpy(cpkt->pkt, rx->pktbuf, pktbuflen);
 
-        iqueue_head *p, *nxt;
-        p = nxt = NULL;
-        for (p = rx->pkt_queue.next; p != &rx->pkt_queue; p = nxt) {
+        // filter out-of-time packet
+        for (iqueue_head *p = rx->pkt_queue.next, *nxt; p != &rx->pkt_queue; p = nxt) {
             nxt = p->next;
             ChainedPkt *entry = iqueue_entry(p, ChainedPkt, qnode);
 
-            // filter out out-of-time packet
-            if (entry->pkt->id < rx->ExpectedBlockID) {
-                iqueue_del(&entry->qnode);
-                free(entry->pkt);
-                free(entry);
-                continue;
-            }
+            if (entry->pkt->id >= rx->ExpectedBlockID) break;
 
-            // find the right inserted position
-            if (entry->pkt->id >= cpkt->pkt->id) break;
+            iqueue_is_empty(&entry->qnode);
+            free(entry->pkt);
+            free(entry);
         }
 
-        cpkt->qnode.prev = p->prev;
-        cpkt->qnode.next = p;
-        p->prev->next = &cpkt->qnode;
-        p->prev = &cpkt->qnode;
+        // insert to right pos at the end
+        iqueue_head *p, *prev;
+        for (p = rx->pkt_queue.prev; p != &rx->pkt_queue; p = prev) {
+            prev = p->prev;
+            ChainedPkt *entry = iqueue_entry(p, ChainedPkt, qnode);
 
+            if (cpkt->pkt->id >= entry->pkt->id) break;
+        }
+
+        cpkt->qnode.prev = p;
+        cpkt->qnode.next = p->next;
+        p->next->prev = &cpkt->qnode;
+        p->next = &cpkt->qnode;
+    }
 
 }
 
@@ -170,8 +175,10 @@ void MovPkt2Dec(Receiver *rx)
         }
 
         // figure out whether there is partial decoded symbol
-        if (decwrapper->id == rx->ExpectedBlockID && kodoc_is_partially_complete(decwrapper->dec)) {
+        if (decwrapper->id == rx->ExpectedBlockID) {
             while (kodoc_is_symbol_uncoded(decwrapper->dec, rx->ExpectedSymbolID)) {
+                debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
+
                 Symbol *sym = malloc(sizeof(Symbol) + rx->maxsymbolsize);
                 void *src = decwrapper->pblk + rx->ExpectedSymbolID * rx->maxsymbolsize;
                 memcpy(sym->data, src, rx->maxsymbolsize);

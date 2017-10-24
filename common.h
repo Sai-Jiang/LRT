@@ -28,7 +28,7 @@
 #define MAXSYMBOL       (256)
 #define MAXSYMBOLSIZE   (1024)
 
-#define LOOPCNT         (4096)
+#define LOOPCNT         (65536)
 
 #define PADLEN          (MAXSYMBOLSIZE - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
@@ -105,6 +105,7 @@ typedef struct {
     uint32_t maxsymbol, maxsymbolsize, blksize;
 
     iqueue_head enc_queue;
+    int enc_cnt;
 
     uint32_t NextBlockID;
 
