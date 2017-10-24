@@ -208,27 +208,56 @@ void MovPkt2Dec(Receiver *rx)
 
 void ReSym2Src(Receiver *rx)
 {
+    SrcData *psd;
+    void *psrc;
+    size_t RestSrcLen;
+    static void *pdst; // default to NULL by 'static' at startup
+    static size_t RestDstLen; // default to zero at startup
+
     while (!iqueue_is_empty(&rx->sym_queue)) {
-        Symbol *sym = iqueue_entry(rx->sym_queue.next, Symbol, qnode);
-        SrcData *sd = malloc(sizeof(SrcData) + rx->maxsymbolsize - 2);
-        memcpy(sd->data, sym->data, rx->maxsymbolsize);
-        iqueue_add_tail(&sd->qnode, &rx->src_queue);
-        iqueue_del(&sym->qnode);
-        free(sym);
+        Symbol *psym = iqueue_entry(rx->sym_queue.next, Symbol, qnode);
+        psrc = psym->data;
+        RestSrcLen = rx->maxsymbolsize;
+
+        while (RestSrcLen >= 2) {
+            if (pdst == NULL) {
+                RestDstLen = *((uint16_t *)psrc);
+                if (RestDstLen == 0) break;
+                else {
+                    psd = malloc(sizeof(SrcData) + RestDstLen);
+                    pdst = psd->data;
+                }
+            }
+
+            size_t MaxCopyable = min(RestSrcLen, RestDstLen);
+            memcpy(pdst, psrc, MaxCopyable);
+            pdst += MaxCopyable; psrc += MaxCopyable;
+            RestDstLen -= MaxCopyable; RestSrcLen -= MaxCopyable;
+
+            if (RestDstLen == 0) {
+                iqueue_add_tail(&psd->qnode, &rx->src_queue);
+                psd = pdst = NULL;
+                RestDstLen = 0;
+            }
+        }
+
+        iqueue_del(&psym->qnode);
+        free(psym);
     }
 }
 
-size_t Recv(Receiver *rx, void *buf, size_t buflen)
+int Recv(Receiver *rx, void *buf, size_t buflen)
 {
     if (iqueue_is_empty(&rx->src_queue)) return 0;
 
-    SrcData *sd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
-    assert(sd->Len >= sizeof(sd->Len) && buflen >= (sd->Len - sizeof(sd->Len)));
-    memcpy(buf, sd->rawdata, sd->Len - sizeof(sd->Len));
-    iqueue_del(&sd->qnode);
-    free(sd);
+    SrcData *psd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
+    assert(psd->Len >= sizeof(psd->Len));
+    if (buflen < (psd->Len - sizeof(psd->Len))) return -1;
+    memcpy(buf, psd->rawdata, psd->Len - sizeof(psd->Len)); // copy rawdata
+    iqueue_del(&psd->qnode);
+    free(psd);
 
-    return buflen;
+    return (int)buflen;
 }
 
 int main()

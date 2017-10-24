@@ -44,6 +44,8 @@ bool GetToken(TokenBucket *tb, size_t need)
 
 Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 {
+    assert(maxsymbolsize >= 512);
+
     Transmitter *tx = malloc(sizeof(Transmitter));
     assert(tx != NULL);
 
@@ -106,33 +108,58 @@ void Transmitter_Release(Transmitter *tx)
     free(tx);
 }
 
-// For Simplicity for now
 size_t Send(Transmitter *tx, void *buf, size_t buflen)
 {
     SrcData *inserted = malloc(sizeof(SrcData) + buflen);
-
     inserted->Len = sizeof(inserted->Len) + buflen;
-    assert(inserted->Len == tx->maxsymbolsize);
     memcpy(inserted->rawdata, buf, buflen);
-
     iqueue_add_tail(&inserted->qnode, &tx->src_queue);
 
     return buflen;
 }
 
-// For Simplicity for now
 void Div2Sym(Transmitter *tx)
 {
+    Symbol *psym;
+    void *psrc, *pdst;
+    size_t RestSrcLen, RestDstLen;
+
+    psym = pdst = NULL;
+    RestDstLen = 0;
+
     while (!iqueue_is_empty(&tx->src_queue)) {
-        SrcData *sd = iqueue_entry(tx->src_queue.next, SrcData, qnode);
-        iqueue_head *del = &sd->qnode;
-        iqueue_del(del);
-        Symbol *sym = malloc((sizeof(Symbol) + tx->maxsymbolsize));
-        assert(sym != NULL);
-        assert(sd->Len == tx->maxsymbolsize);
-        memcpy(sym->data, sd->data, sd->Len);
-        iqueue_add_tail(&sym->qnode, &tx->sym_queue);
-        free(sd);
+        SrcData *psd = iqueue_entry(tx->src_queue.next, SrcData, qnode);
+        psrc = psd->data;
+        RestSrcLen = psd->Len;
+
+        while (RestSrcLen > 0) {
+            if (pdst == NULL) {
+                psym = malloc(sizeof(Symbol) + tx->maxsymbolsize);
+                pdst = psym->data;
+                RestDstLen = tx->maxsymbolsize;
+                memset(pdst, 0, RestDstLen);
+            }
+
+            size_t MaxCopyable = min(RestSrcLen, RestDstLen);
+            memcpy(pdst, psrc, MaxCopyable);
+            pdst += MaxCopyable; psrc += MaxCopyable;
+            RestDstLen -= MaxCopyable; RestSrcLen -= MaxCopyable;
+
+            if (RestDstLen == 0 || RestDstLen == 1) {
+                iqueue_add_tail(&psym->qnode, &tx->sym_queue);
+                psym = pdst = NULL;
+                RestDstLen = 0;
+            }
+        }
+
+        iqueue_del(&psd->qnode);
+        free(psd);
+    }
+
+    if (psym != NULL) {
+        iqueue_add_tail(&psym->qnode, &tx->sym_queue);
+        psym = pdst = NULL;
+        RestDstLen = 0;
     }
 }
 
