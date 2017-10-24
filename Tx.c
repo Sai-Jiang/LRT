@@ -170,8 +170,7 @@ void MovSym2Enc(Transmitter *tx)
 
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-
-//                send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
 
             iqueue_del(&sym->qnode);
             free(sym);
@@ -196,7 +195,7 @@ void CheckACK(Transmitter *tx)
                 assert(msg.id == encwrapper->id);
                 assert(msg.rank > 0 && msg.rank <= tx->maxsymbol);
                 encwrapper->rrank = max(encwrapper->rrank, msg.rank);
-                debug("enc[%u] lrank updated: %u\n", encwrapper->id, encwrapper->lrank);
+//                debug("enc[%u] lrank updated: %u\n", encwrapper->id, encwrapper->lrank);
             }
         }
     }
@@ -211,11 +210,11 @@ void Fountain(Transmitter *tx)
 
         // free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
+            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
         } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
                 encwrapper->lrank > encwrapper->rrank) {
             tx->pktbuf->id = encwrapper->id;

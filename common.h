@@ -28,7 +28,7 @@
 #define MAXSYMBOL       (256)
 #define MAXSYMBOLSIZE   (1024)
 
-#define LOOPCNT         (65536)
+#define LOOPCNT         (32768)
 
 #define PADLEN          (MAXSYMBOLSIZE - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
@@ -139,7 +139,7 @@ typedef struct {
 
     kodoc_factory_t dec_factory;
 
-    int maxsymbol, maxsymbolsize, blksize;
+    uint32_t maxsymbol, maxsymbolsize, blksize;
 
     iqueue_head dec_queue;
 

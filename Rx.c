@@ -72,8 +72,14 @@ void CheckPkt(Receiver *rx) {
         if (nbytes < 0) break;
         assert(nbytes == sizeof(Packet) + rx->payload_size);
 
-        // Discard the out-of-date packet
-        if (rx->pktbuf->id < rx->ExpectedBlockID) break;
+        // Discard the out-of-date packet & Send full-rank feedback
+        if (rx->pktbuf->id < rx->ExpectedBlockID) {
+            AckMsg ack;
+            ack.id = rx->pktbuf->id;
+            ack.rank = rx->maxsymbol;
+            send(rx->SignalSock, &ack, sizeof(ack), 0);
+            continue;
+        }
 
         ChainedPkt *cpkt = malloc(sizeof(ChainedPkt));
         cpkt->pkt = malloc(pktbuflen);
@@ -177,7 +183,7 @@ void MovPkt2Dec(Receiver *rx)
         // figure out whether there is partial decoded symbol
         if (decwrapper->id == rx->ExpectedBlockID) {
             while (kodoc_is_symbol_uncoded(decwrapper->dec, rx->ExpectedSymbolID)) {
-                debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
+//                debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
 
                 Symbol *sym = malloc(sizeof(Symbol) + rx->maxsymbolsize);
                 void *src = decwrapper->pblk + rx->ExpectedSymbolID * rx->maxsymbolsize;
