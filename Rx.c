@@ -225,7 +225,6 @@ int main()
     uint32_t seq = 0;
 
     UserData_t ud;
-    memset(&ud, 0, sizeof(ud));
 
     do {
         CheckPkt(rx);
@@ -234,9 +233,12 @@ int main()
 
         if (Recv(rx, &ud, sizeof(ud)) > 0) {
             printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
-            memset(&ud, 0, sizeof(ud));
+
+            int i;
+            for (i = 0; i < PADLEN && ud.buf[i] == ('a' + ud.seq % 26); i++);
+            assert(i == PADLEN);
         }
-    } while (seq < 500 ||
+    } while (seq < LOOPCNT ||
             !iqueue_is_empty(&rx->pkt_queue) ||
             !iqueue_is_empty(&rx->dec_queue) ||
             !iqueue_is_empty(&rx->sym_queue) ||

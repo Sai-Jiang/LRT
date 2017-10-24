@@ -28,12 +28,15 @@
 #define MAXSYMBOL       (256)
 #define MAXSYMBOLSIZE   (1024)
 
+#define LOOPCNT         (4096)
+
+#define PADLEN          (MAXSYMBOLSIZE - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
 // Take care of 'Byte Alignment' !!
 typedef struct {
     uint32_t seq;
     long ts;
-    uint8_t buf[MAXSYMBOLSIZE - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long)];
+    uint8_t buf[PADLEN];
 } __attribute__((packed)) UserData_t;
 
 
@@ -145,7 +148,5 @@ typedef struct {
 
     int DataSock, SignalSock;
 } Receiver;
-
-
 
 #endif //LLRTP_COMMON_H

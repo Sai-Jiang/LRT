@@ -208,7 +208,6 @@ void Fountain(Transmitter *tx)
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-            encwrapper = NULL;
         } else if (encwrapper->lrank > encwrapper->rrank && GetToken(&encwrapper->tb, sizeof(Packet))) {
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
@@ -222,17 +221,18 @@ int main()
 {
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
+    TokenBucket tb;
+    TokenBucketInit(&tb, 1000);
+
     uint32_t seq = 0;
 
     UserData_t ud;
-    ud.ts = 0;
 
     do {
-        long now = GetTS();
-
-        if ((ud.ts == 0 || now - ud.ts >= 2) && seq < 2048)  {
+        if (seq < LOOPCNT && GetToken(&tb, sizeof(ud)))  {
             ud.seq = seq++;
-            ud.ts = now;
+            ud.ts = GetTS();
+            memset(ud.buf, 'a' + ud.seq % 26, PADLEN);
             Send(tx, &ud, sizeof(ud));
         }
 
@@ -243,7 +243,7 @@ int main()
 
         usleep(500);
 
-    } while (seq < 2048 ||
+    } while (seq < LOOPCNT ||
             !iqueue_is_empty(&tx->src_queue) ||
             !iqueue_is_empty(&tx->enc_queue));
 
