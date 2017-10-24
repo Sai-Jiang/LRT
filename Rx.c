@@ -15,6 +15,8 @@ Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     iqueue_init(&rx->sym_queue);
     iqueue_init(&rx->src_queue);
 
+    rx->src_cnt = 0;
+
     rx->dec_factory = kodoc_new_decoder_factory(codec, kodoc_binary8,
                                                 maxsymbols, maxsymbolsize);
     rx->maxsymbol = maxsymbols;
@@ -222,6 +224,7 @@ void ReSym2Src(Receiver *rx)
         while (RestSrcLen >= 2) {
             if (pdst == NULL) {
                 RestDstLen = *((uint16_t *)psrc);
+                assert(RestDstLen == 1500 || RestDstLen == 0);
                 if (RestDstLen == 0) break;
                 else {
                     psd = malloc(sizeof(SrcData) + RestDstLen - sizeof(psd->Len));
@@ -236,6 +239,7 @@ void ReSym2Src(Receiver *rx)
             RestDstLen -= MaxCopyable; RestSrcLen -= MaxCopyable;
 
             if (RestDstLen == 0) {
+                printf("Add src: %u\n", ++rx->src_cnt);
                 iqueue_add_tail(&psd->qnode, &rx->src_queue);
                 psd = pdst = NULL;
                 RestDstLen = 0;
@@ -253,7 +257,8 @@ int Recv(Receiver *rx, void *buf, size_t buflen)
 
     SrcData *psd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
     assert(psd->Len >= sizeof(psd->Len));
-    if (buflen < (psd->Len - sizeof(psd->Len))) return -1;
+    assert(buflen == psd->Len - sizeof(psd->Len));
+    printf("Del src: %u\n", --rx->src_cnt);
     memcpy(buf, psd->rawdata, psd->Len - sizeof(psd->Len)); // copy rawdata
     iqueue_del(&psd->qnode);
     free(psd);
@@ -274,7 +279,7 @@ int main()
         MovPkt2Dec(rx);
         ReSym2Src(rx);
 
-        if (Recv(rx, &ud, sizeof(ud)) > 0) {
+        while (Recv(rx, &ud, sizeof(ud)) > 0) {
             printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
 
             int i;

@@ -30,7 +30,7 @@
 
 #define LOOPCNT         (32768)
 
-#define PADLEN          (MAXSYMBOLSIZE - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
+#define PADLEN          (1500 - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
 // Take care of 'Byte Alignment' !!
 typedef struct {
@@ -144,6 +144,8 @@ typedef struct {
     iqueue_head dec_queue;
 
     iqueue_head sym_queue;
+
+    uint32_t src_cnt;
 
     iqueue_head src_queue;
 

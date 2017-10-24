@@ -257,7 +257,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 2000); // equals to 1300Bps
+    TokenBucketInit(&tb, 5000); // equals to 1300Bps
 
     uint32_t seq = 0;
 
