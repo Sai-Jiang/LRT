@@ -25,6 +25,7 @@ Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     rx->payload_size = kodoc_factory_max_payload_size(rx->dec_factory);
     rx->pktbuf = malloc(sizeof(Packet) + rx->payload_size);
+    assert(rx->pktbuf != NULL);
 
     rx->ExpectedBlockID = rx->ExpectedSymbolID = 0;
 
@@ -70,7 +71,7 @@ void CheckPkt(Receiver *rx) {
     long EntTS = GetTS();
 
     while (GetTS() - EntTS <= 1) {
-        ssize_t nbytes = read(rx->DataSock, rx->pktbuf, pktbuflen);
+        ssize_t nbytes = recv(rx->DataSock, rx->pktbuf, pktbuflen, 0);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(Packet) + rx->payload_size);
 
@@ -94,7 +95,7 @@ void CheckPkt(Receiver *rx) {
 
             if (entry->pkt->id >= rx->ExpectedBlockID) break;
 
-            iqueue_is_empty(&entry->qnode);
+            iqueue_del(p);
             free(entry->pkt);
             free(entry);
         }
@@ -210,11 +211,11 @@ void MovPkt2Dec(Receiver *rx)
 
 void ReSym2Src(Receiver *rx)
 {
-    SrcData *psd;
+    static SrcData *psd = NULL;
     void *psrc;
     size_t RestSrcLen;
-    static void *pdst; // default to NULL by 'static' at startup
-    static size_t RestDstLen; // default to zero at startup
+    static void *pdst = NULL; // default to NULL by 'static' at startup
+    static size_t RestDstLen = 0; // default to zero at startup
 
     while (!iqueue_is_empty(&rx->sym_queue)) {
         Symbol *psym = iqueue_entry(rx->sym_queue.next, Symbol, qnode);
@@ -222,24 +223,30 @@ void ReSym2Src(Receiver *rx)
         RestSrcLen = rx->maxsymbolsize;
 
         while (RestSrcLen >= 2) {
+
             if (pdst == NULL) {
                 RestDstLen = *((uint16_t *)psrc);
-                assert(RestDstLen == 1500 || RestDstLen == 0);
+                assert(RestDstLen == INTENDEDLEN || RestDstLen == 0);
                 if (RestDstLen == 0) break;
                 else {
-                    psd = malloc(sizeof(SrcData) + RestDstLen - sizeof(psd->Len));
+                    psd = malloc(sizeof(SrcData) + RestDstLen - sizeof(uint16_t));
                     pdst = psd->data;
-                    memset(psd, 0, RestDstLen);
+                    memset(pdst, 0, RestDstLen);
                 }
             }
 
+            debug("RestSrcLen: %zu, RestDstLen: %zu, MaxCopyable: %lu\n",
+                   RestSrcLen, RestDstLen, min(RestDstLen, RestSrcLen));
             size_t MaxCopyable = min(RestSrcLen, RestDstLen);
             memcpy(pdst, psrc, MaxCopyable);
             pdst += MaxCopyable; psrc += MaxCopyable;
             RestDstLen -= MaxCopyable; RestSrcLen -= MaxCopyable;
 
+
             if (RestDstLen == 0) {
-                printf("Add src: %u\n", ++rx->src_cnt);
+                assert(psd->Len == INTENDEDLEN);
+                debug("Add src, cnt: %u, seq: %u, len: %hu\n", ++rx->src_cnt,
+                       *(uint32_t *)(psd->rawdata), psd->Len);
                 iqueue_add_tail(&psd->qnode, &rx->src_queue);
                 psd = pdst = NULL;
                 RestDstLen = 0;
@@ -258,7 +265,7 @@ int Recv(Receiver *rx, void *buf, size_t buflen)
     SrcData *psd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
     assert(psd->Len >= sizeof(psd->Len));
     assert(buflen == psd->Len - sizeof(psd->Len));
-    printf("Del src: %u\n", --rx->src_cnt);
+    debug("Del src: %u\n", --rx->src_cnt);
     memcpy(buf, psd->rawdata, psd->Len - sizeof(psd->Len)); // copy rawdata
     iqueue_del(&psd->qnode);
     free(psd);

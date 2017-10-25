@@ -7,6 +7,9 @@ set(SOURCE_FILES common.h GenericQueue.h)
 set(INClUDE_DIR ./include)
 set(LIB_DIR ./lib)
 
+#set(CMAKE_C_FLAGS " -g ${CMAKE_CXX_FLAGS}")
+#set(CMAKE_CXX_FLAGS " -fsanitize=address -g ${CMAKE_CXX_FLAGS}")
+
 include_directories(${INClUDE_DIR})
 link_directories(${LIB_DIR})
 

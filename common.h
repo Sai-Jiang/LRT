@@ -28,9 +28,11 @@
 #define MAXSYMBOL       (256)
 #define MAXSYMBOLSIZE   (1024)
 
-#define LOOPCNT         (32768)
+#define LOOPCNT         (65536)
 
-#define PADLEN          (1500 - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
+#define INTENDEDLEN     (1500)
+
+#define PADLEN          (INTENDEDLEN - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
 // Take care of 'Byte Alignment' !!
 typedef struct {
