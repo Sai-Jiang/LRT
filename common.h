@@ -30,15 +30,16 @@
 
 #define LOOPCNT         (65536)
 
-#define INTENDEDLEN     (1500)
+#define INTENDEDLEN     (1300)
 
 #define PADLEN          (INTENDEDLEN - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
 // Take care of 'Byte Alignment' !!
 typedef struct {
     uint32_t seq;
+    uint32_t len;
     long ts;
-    uint8_t buf[PADLEN];
+    uint8_t buf[0];
 } __attribute__((packed)) UserData_t;
 
 

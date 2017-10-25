@@ -257,18 +257,33 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 5000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1500); // equals to 1300Bps
 
     uint32_t seq = 0;
 
     UserData_t ud;
 
     do {
-        while (seq < LOOPCNT && GetToken(&tb, sizeof(ud)))  {
+        while (seq < LOOPCNT)  {
+            uint32_t rndlen = rand() % 2000 + 200;
+
+            if (GetToken(&tb, sizeof(ud) + rndlen) == false)
+                break;
+
+            void *buf = malloc(sizeof(ud) + rndlen);
+            void *pdst = buf;
+
             ud.seq = seq++;
+            ud.len = rndlen;
             ud.ts = GetTS();
-            memset(ud.buf, 'a' + (ud.seq * 3 / 2) % 26, PADLEN);
-            Send(tx, &ud, sizeof(ud));
+
+            memcpy(pdst, &(ud.seq), sizeof(ud.seq)); pdst += sizeof(ud.seq);
+            memcpy(pdst, &(ud.len), sizeof(ud.len)); pdst += sizeof(ud.len);
+            memcpy(pdst, &(ud.ts), sizeof(ud.ts)); pdst += sizeof(ud.ts);
+            memset(pdst, 'a' + (ud.seq * 3 / 2) % 26, rndlen);
+            Send(tx, buf, sizeof(ud) + rndlen);
+
+            free(buf);
         }
 
         Div2Sym(tx);
@@ -276,7 +291,7 @@ int main()
         CheckACK(tx);
         Fountain(tx);
 
-        usleep(20);
+        usleep(50);
 
     } while (seq < LOOPCNT ||
             !iqueue_is_empty(&tx->src_queue) ||

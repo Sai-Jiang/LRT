@@ -226,7 +226,7 @@ void ReSym2Src(Receiver *rx)
 
             if (pdst == NULL) {
                 RestDstLen = *((uint16_t *)psrc);
-                assert(RestDstLen == INTENDEDLEN || RestDstLen == 0);
+                //assert(RestDstLen == INTENDEDLEN || RestDstLen == 0);
                 if (RestDstLen == 0) break;
                 else {
                     psd = malloc(sizeof(SrcData) + RestDstLen - sizeof(uint16_t));
@@ -244,7 +244,7 @@ void ReSym2Src(Receiver *rx)
 
 
             if (RestDstLen == 0) {
-                assert(psd->Len == INTENDEDLEN);
+                //assert(psd->Len == INTENDEDLEN);
                 debug("Add src, cnt: %u, seq: %u, len: %hu\n", ++rx->src_cnt,
                        *(uint32_t *)(psd->rawdata), psd->Len);
                 iqueue_add_tail(&psd->qnode, &rx->src_queue);
@@ -264,7 +264,7 @@ int Recv(Receiver *rx, void *buf, size_t buflen)
 
     SrcData *psd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
     assert(psd->Len >= sizeof(psd->Len));
-    assert(buflen == psd->Len - sizeof(psd->Len));
+//    assert(buflen == psd->Len - sizeof(psd->Len));
     debug("Del src: %u\n", --rx->src_cnt);
     memcpy(buf, psd->rawdata, psd->Len - sizeof(psd->Len)); // copy rawdata
     iqueue_del(&psd->qnode);
@@ -279,20 +279,32 @@ int main()
 
     uint32_t seq = 0;
 
-    UserData_t ud;
+    uint8_t buf[65536];
 
     do {
         CheckPkt(rx);
         MovPkt2Dec(rx);
         ReSym2Src(rx);
 
-        while (Recv(rx, &ud, sizeof(ud)) > 0) {
+        while (Recv(rx, buf, 65536) > 0) {
+//            seq++;
+
+            UserData_t ud;
+
+            void *psrc = buf;
+
+            memcpy(&ud.seq, psrc, sizeof(ud.seq)); psrc += sizeof(ud.seq);
+            memcpy(&ud.len, psrc, sizeof(ud.len)); psrc += sizeof(ud.len);
+            memcpy(&ud.ts, psrc, sizeof(ud.ts)); psrc += sizeof(ud.ts);
+
             printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
 
             int i;
-            for (i = 0; i < PADLEN && ud.buf[i] == ('a' + (ud.seq * 3 / 2) % 26); i++);
-            assert(i == PADLEN);
+            for (i = 0; i < ud.len && ((char *)(psrc))[i] == ('a' + (ud.seq * 3 / 2) % 26); i++);
+            assert(i == ud.len);
         }
+
+        usleep(50);
     } while (seq < LOOPCNT ||
             !iqueue_is_empty(&rx->pkt_queue) ||
             !iqueue_is_empty(&rx->dec_queue) ||
