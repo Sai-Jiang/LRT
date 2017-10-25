@@ -182,28 +182,34 @@ void MovPkt2Dec(Receiver *rx)
             free(cpkt->pkt);
             free(cpkt);
         }
+    }
+}
 
-        // figure out whether there is partial decoded symbol
-        if (decwrapper->id == rx->ExpectedBlockID) {
-            while (kodoc_is_symbol_uncoded(decwrapper->dec, rx->ExpectedSymbolID)) {
-//                debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
+void GenSym(Receiver *rx)
+{
+    if (iqueue_is_empty(&rx->dec_queue)) return;
 
-                Symbol *sym = malloc(sizeof(Symbol) + rx->maxsymbolsize);
-                void *src = decwrapper->pblk + rx->ExpectedSymbolID * rx->maxsymbolsize;
-                memcpy(sym->data, src, rx->maxsymbolsize);
-                iqueue_add_tail(&sym->qnode, &rx->sym_queue);
+    DecWrapper *decwrapper = iqueue_entry(rx->dec_queue.next, DecWrapper, qnode);
 
-                rx->ExpectedSymbolID++;
+    if (decwrapper->id == rx->ExpectedBlockID) {
+        while (kodoc_is_symbol_uncoded(decwrapper->dec, rx->ExpectedSymbolID)) {
+            debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
 
-                if (rx->ExpectedSymbolID == rx->maxsymbol) {
-                    rx->ExpectedSymbolID = 0;
-                    rx->ExpectedBlockID++;
-                    iqueue_del(&decwrapper->qnode);
-                    kodoc_delete_coder(decwrapper->dec);
-                    free(decwrapper->pblk);
-                    free(decwrapper);
-                    break;
-                }
+            Symbol *sym = malloc(sizeof(Symbol) + rx->maxsymbolsize);
+            void *src = decwrapper->pblk + rx->ExpectedSymbolID * rx->maxsymbolsize;
+            memcpy(sym->data, src, rx->maxsymbolsize);
+            iqueue_add_tail(&sym->qnode, &rx->sym_queue);
+
+            rx->ExpectedSymbolID++;
+
+            if (rx->ExpectedSymbolID == rx->maxsymbol) {
+                rx->ExpectedSymbolID = 0;
+                rx->ExpectedBlockID++;
+                iqueue_del(&decwrapper->qnode);
+                kodoc_delete_coder(decwrapper->dec);
+                free(decwrapper->pblk);
+                free(decwrapper);
+                break;
             }
         }
     }
@@ -223,7 +229,6 @@ void ReSym2Src(Receiver *rx)
         RestSrcLen = rx->maxsymbolsize;
 
         while (RestSrcLen >= 2) {
-
             if (pdst == NULL) {
                 RestDstLen = *((uint16_t *)psrc);
                 assert(RestDstLen == INTENDEDLEN || RestDstLen == 0);
@@ -284,6 +289,7 @@ int main()
     do {
         CheckPkt(rx);
         MovPkt2Dec(rx);
+        GenSym(rx);
         ReSym2Src(rx);
 
         while (Recv(rx, &ud, sizeof(ud)) > 0) {
