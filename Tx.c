@@ -13,12 +13,13 @@ void TokenBucketInit(TokenBucket *tb, double rate)
     tb->LimitedRate = rate; // Unit: Byte/ms
 }
 
-void PutToken(TokenBucket *tb)
+
+void __PutToken(TokenBucket *tb, double LimitedRate)
 {
     if (tb->CurCapactiy >= tb->MaxCapacity) return;
     long Now = GetTS();
     assert(Now >= tb->ts);
-    uint32_t reload = (uint32_t)((Now - tb->ts) * tb->LimitedRate);
+    uint32_t reload = (uint32_t)((Now - tb->ts) * LimitedRate);
     assert(reload >= 0);
     if (reload > 0) {
         tb->ts = Now;
@@ -26,9 +27,14 @@ void PutToken(TokenBucket *tb)
     }
 }
 
-bool GetToken(TokenBucket *tb, size_t need)
+void PutToken(TokenBucket *tb)
 {
-    PutToken(tb);
+    __PutToken(tb, tb->LimitedRate);
+}
+
+bool __GetToken(TokenBucket *tb, size_t need, double LimitedRate)
+{
+    __PutToken(tb, LimitedRate);
 
     bool rval = false;
 
@@ -36,10 +42,13 @@ bool GetToken(TokenBucket *tb, size_t need)
         tb->CurCapactiy -= need;
         rval = true;
     }
-//    if (need > 1200)
-//        printf("GetToken: %s\n", rval ? "True" : "False");
 
     return rval;
+}
+
+bool GetToken(TokenBucket *tb, size_t need)
+{
+    return __GetToken(tb, need, tb->LimitedRate);
 }
 
 Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
@@ -69,6 +78,11 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     tx->payload_size = kodoc_factory_max_payload_size(tx->enc_factory);
     tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
     assert(tx->payload_size < 1500);
+
+    tx->bw_est = 0;
+    tx->ackcnt = 0;
+    tx->lasttime = GetTS();
+    tx->weight = 0.3;
 
     struct sockaddr_in addr;
 
@@ -209,16 +223,12 @@ void CheckACK(Transmitter *tx)
 {
     AckMsg msg;
 
-    static double bw_est = 0;
-    static long lastime = 0;
-    static uint32_t cnt = 0;
-
     while (true) {
         ssize_t nbytes = recv(tx->SignalSock, &msg, sizeof(msg), 0);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(msg));
 
-        cnt++;
+        tx->ackcnt++;
 
         EncWrapper *encwrapper = NULL;
         iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
@@ -233,20 +243,14 @@ void CheckACK(Transmitter *tx)
         }
     }
 
-    if (lastime == 0) {
-        lastime = GetTS();
-        cnt = 0;
-    } else {
-        long now = GetTS();
-        long diff = now - lastime;
-        if (diff >= 2) {
-            double bw = (double)tx->payload_size * cnt / (double)diff;
-            bw_est = 0.5 * bw_est + 0.5 * bw;
-            debug("bw_est: %lf\n", bw_est);
-
-            cnt = 0;
-            lastime = now;
-        }
+    long now = GetTS();
+    long diff = now - tx->lasttime;
+    if (diff >= 2) {
+        double bw = (double)tx->payload_size * tx->ackcnt / (double)diff;
+        tx->bw_est = (1 - tx->weight) * tx->bw_est + tx->weight * bw;
+        debug("bw_est: %lf\n", tx->bw_est);
+        tx->ackcnt = 0;
+        tx->lasttime = now;
     }
 }
 
@@ -264,7 +268,7 @@ void Fountain(Transmitter *tx)
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-        } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
+        } else if (__GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size, 1.25 * tx->bw_est) &&
                 encwrapper->lrank > encwrapper->rrank) {
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);

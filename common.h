@@ -56,10 +56,6 @@ typedef struct {
         ({ struct timeval tv; gettimeofday(&tv, NULL); \
         tv.tv_sec * 1000 + tv.tv_usec / 1000; })
 
-#define uGetTS() \
-        ({ struct timeval tv; gettimeofday(&tv, NULL); \
-        tv.tv_sec * 1000000 + tv.tv_usec; })
-
 #define debug(fmt, ...) \
         do { fprintf(stderr, "%s()=> " fmt, __func__, __VA_ARGS__); } while (0)
 
@@ -119,6 +115,11 @@ typedef struct {
     uint32_t payload_size;
 
     int DataSock, SignalSock;
+
+    double bw_est;
+    double weight;
+    long lasttime;
+    uint32_t ackcnt;
 
 } Transmitter;
 
