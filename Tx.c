@@ -256,23 +256,42 @@ void CheckACK(Transmitter *tx)
 
 void Fountain(Transmitter *tx)
 {
+    tx->totaldelta = 0;
+
     EncWrapper *encwrapper = NULL;
     for (iqueue_head *p = tx->enc_queue.next, *nxt; p != &tx->enc_queue; p = nxt) {
         nxt = p->next;
         encwrapper = iqueue_entry(p, EncWrapper, qnode);
 
-        // free the encoder that finished the job
+//         free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
 //            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-        } else if (__GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size, 1.25 * tx->bw_est) &&
-                encwrapper->lrank > encwrapper->rrank) {
+            continue;
+        }
+
+        assert(encwrapper->lrank >= encwrapper->rrank);
+        encwrapper->delta = encwrapper->lrank - encwrapper->rrank;
+        tx->totaldelta += encwrapper->delta;
+    }
+
+    for (iqueue_head *p = tx->enc_queue.next, *nxt; p != &tx->enc_queue; p = nxt) {
+        nxt = p->next;
+        encwrapper = iqueue_entry(p, EncWrapper, qnode);
+
+        if (encwrapper->lrank == encwrapper->rrank) continue;
+
+        assert(encwrapper->lrank > encwrapper->rrank);
+        size_t pktbulen = sizeof(Packet) + tx->payload_size;
+        double rate = 1.25 * tx->bw_est * (double)encwrapper->delta / (double)tx->totaldelta;
+
+        if (__GetToken(&encwrapper->tb, pktbulen, rate)) {
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            send(tx->DataSock, tx->pktbuf, pktbulen, 0);
         }
     }
 }
