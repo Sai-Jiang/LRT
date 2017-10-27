@@ -209,10 +209,16 @@ void CheckACK(Transmitter *tx)
 {
     AckMsg msg;
 
+    static double bw_est = 0;
+    static long lastime = 0;
+    uint32_t cnt = 0;
+
     while (true) {
-        ssize_t nbytes = read(tx->SignalSock, &msg, sizeof(msg));
+        ssize_t nbytes = recv(tx->SignalSock, &msg, sizeof(msg), 0);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(msg));
+
+        cnt++;
 
         EncWrapper *encwrapper = NULL;
         iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
@@ -226,6 +232,18 @@ void CheckACK(Transmitter *tx)
             }
         }
     }
+
+    long now = uGetTS();
+    if (lastime != 0) {
+        long diff = now - lastime;
+        if (diff != 0) {
+            assert(diff > 0);
+            double bw = (double)tx->payload_size * cnt * 1000 / (double)diff;
+            bw_est = 0.5 * bw_est + 0.5 * bw;
+            debug("bw_est: %lf\n", bw_est);
+        }
+    }
+    lastime = now;
 }
 
 void Fountain(Transmitter *tx)
