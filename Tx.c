@@ -211,7 +211,7 @@ void CheckACK(Transmitter *tx)
 
     static double bw_est = 0;
     static long lastime = 0;
-    uint32_t cnt = 0;
+    static uint32_t cnt = 0;
 
     while (true) {
         ssize_t nbytes = recv(tx->SignalSock, &msg, sizeof(msg), 0);
@@ -233,17 +233,21 @@ void CheckACK(Transmitter *tx)
         }
     }
 
-    long now = uGetTS();
-    if (lastime != 0) {
+    if (lastime == 0) {
+        lastime = GetTS();
+        cnt = 0;
+    } else {
+        long now = GetTS();
         long diff = now - lastime;
-        if (diff != 0) {
-            assert(diff > 0);
-            double bw = (double)tx->payload_size * cnt * 1000 / (double)diff;
+        if (diff >= 2) {
+            double bw = (double)tx->payload_size * cnt / (double)diff;
             bw_est = 0.5 * bw_est + 0.5 * bw;
             debug("bw_est: %lf\n", bw_est);
+
+            cnt = 0;
+            lastime = now;
         }
     }
-    lastime = now;
 }
 
 void Fountain(Transmitter *tx)
@@ -255,7 +259,7 @@ void Fountain(Transmitter *tx)
 
         // free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
-            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
+//            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
