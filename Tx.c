@@ -261,13 +261,12 @@ void Fountain(Transmitter *tx)
 
         size_t pktbuflen = sizeof(Packet) + tx->payload_size;
         uint32_t Extra = (encwrapper->lrank - encwrapper->rrank) * tx->LossRate / 100;
-        debug("enc[%u] extra %u repair symbol\n", encwrapper->id, Extra);
         while (Extra > 0 && GetToken(&encwrapper->tb, pktbuflen)) {
             tx->pktbuf->sbn = encwrapper->id;
             tx->pktbuf->esi = encwrapper->NextEsi++;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
             send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
-            Extra--;
+            debug("enc[%u] extra %u repair symbol\n", encwrapper->id, Extra--);
         }
     }
 }
