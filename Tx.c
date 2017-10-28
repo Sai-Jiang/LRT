@@ -13,12 +13,13 @@ void TokenBucketInit(TokenBucket *tb, double rate)
     tb->LimitedRate = rate; // Unit: Byte/ms
 }
 
-void PutToken(TokenBucket *tb)
+
+void __PutToken(TokenBucket *tb, double LimitedRate)
 {
     if (tb->CurCapactiy >= tb->MaxCapacity) return;
     long Now = GetTS();
     assert(Now >= tb->ts);
-    uint32_t reload = (uint32_t)((Now - tb->ts) * tb->LimitedRate);
+    uint32_t reload = (uint32_t)((Now - tb->ts) * LimitedRate);
     assert(reload >= 0);
     if (reload > 0) {
         tb->ts = Now;
@@ -26,9 +27,14 @@ void PutToken(TokenBucket *tb)
     }
 }
 
-bool GetToken(TokenBucket *tb, size_t need)
+void PutToken(TokenBucket *tb)
 {
-    PutToken(tb);
+    __PutToken(tb, tb->LimitedRate);
+}
+
+bool __GetToken(TokenBucket *tb, size_t need, double LimitedRate)
+{
+    __PutToken(tb, LimitedRate);
 
     bool rval = false;
 
@@ -38,6 +44,11 @@ bool GetToken(TokenBucket *tb, size_t need)
     }
 
     return rval;
+}
+
+bool GetToken(TokenBucket *tb, size_t need)
+{
+    return __GetToken(tb, need, tb->LimitedRate);
 }
 
 Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
@@ -69,6 +80,11 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     assert(tx->payload_size < 1500);
 
     tx->LossRate = 10;   // 5%
+
+    tx->bw_est = 0;
+    tx->ackcnt = 0;
+    tx->lasttime = GetTS();
+    tx->weight = 0.3;
 
     struct sockaddr_in addr;
 
@@ -214,9 +230,11 @@ void CheckACK(Transmitter *tx)
     AckMsg msg;
 
     while (true) {
-        ssize_t nbytes = read(tx->SignalSock, &msg, sizeof(msg));
+        ssize_t nbytes = recv(tx->SignalSock, &msg, sizeof(msg), 0);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(msg));
+
+        tx->ackcnt++;
 
         EncWrapper *encwrapper = NULL;
         iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
@@ -234,16 +252,28 @@ void CheckACK(Transmitter *tx)
             }
         }
     }
+
+    long now = GetTS();
+    long diff = now - tx->lasttime;
+    if (diff >= 2) {
+        double bw = (double)tx->payload_size * tx->ackcnt / (double)diff;
+        tx->bw_est = (1 - tx->weight) * tx->bw_est + tx->weight * bw;
+        debug("bw_est: %lf\n", tx->bw_est);
+        tx->ackcnt = 0;
+        tx->lasttime = now;
+    }
 }
 
 void Fountain(Transmitter *tx)
 {
+    tx->totaldelta = 0;
+
     EncWrapper *encwrapper = NULL;
     for (iqueue_head *p = tx->enc_queue.next, *nxt; p != &tx->enc_queue; p = nxt) {
         nxt = p->next;
         encwrapper = iqueue_entry(p, EncWrapper, qnode);
 
-        // free the encoder that finished the job
+//         free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
 //            debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
             assert(encwrapper->MaxAckID + 1 >= encwrapper->AckCnt);
@@ -259,14 +289,30 @@ void Fountain(Transmitter *tx)
             continue;
         }
 
+        assert(encwrapper->lrank >= encwrapper->rrank);
+        encwrapper->delta = encwrapper->lrank - encwrapper->rrank;
+        tx->totaldelta += encwrapper->delta;
+    }
+
+    for (iqueue_head *p = tx->enc_queue.next, *nxt; p != &tx->enc_queue; p = nxt) {
+        nxt = p->next;
+        encwrapper = iqueue_entry(p, EncWrapper, qnode);
+
+        if (encwrapper->delta == 0) continue;
+
         size_t pktbuflen = sizeof(Packet) + tx->payload_size;
-        uint32_t Extra = (encwrapper->lrank - encwrapper->rrank) * tx->LossRate / 100;
-        while (Extra > 0 && GetToken(&encwrapper->tb, pktbuflen)) {
+        double rate = 1.25 * tx->bw_est * (double)encwrapper->delta / (double)tx->totaldelta;
+        rate = max(rate, 500); rate = min(rate, 2000);
+
+        uint32_t Extra = encwrapper->delta * tx->LossRate / 100;
+
+        while (Extra > 0 && __GetToken(&encwrapper->tb, pktbuflen, rate)) {
             tx->pktbuf->sbn = encwrapper->id;
             tx->pktbuf->esi = encwrapper->NextEsi++;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
-            debug("enc[%u] extra %u repair symbol\n", encwrapper->id, Extra--);
+            send(tx->DataSock, tx->pktbuf, pktbuflen, 0);
+            debug("enc[%u] extra %u repair symbol\n", encwrapper->id, Extra);
+            Extra--;
         }
     }
 }

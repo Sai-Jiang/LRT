@@ -82,7 +82,7 @@ typedef struct {
     iqueue_head qnode;
     uint32_t id;
     kodoc_coder_t enc;
-    uint32_t lrank, rrank;
+    uint32_t lrank, rrank, delta;
     uint8_t  *pblk;
     TokenBucket tb;
 
@@ -124,6 +124,13 @@ typedef struct {
     int DataSock, SignalSock;
 
     uint8_t LossRate; // Unit: %
+
+    double bw_est;
+    double weight;
+    long lasttime;
+    uint32_t ackcnt;
+
+    uint32_t totaldelta;
 } Transmitter;
 
 typedef struct {
