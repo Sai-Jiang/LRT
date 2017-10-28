@@ -227,6 +227,9 @@ void CheckACK(Transmitter *tx)
                 encwrapper->rrank = max(encwrapper->rrank, msg.rank);
                 encwrapper->MaxAckID = max(encwrapper->MaxAckID, msg.esi);
                 encwrapper->AckCnt++;
+                debug("MaxAckID: %u, msg.esi: %u, AckCnt: %u\n",
+                      encwrapper->MaxAckID, msg.esi, encwrapper->AckCnt);
+
 //                debug("enc[%u] lrank updated: %u\n", encwrapper->id, encwrapper->lrank);
             }
         }
@@ -242,6 +245,7 @@ void Fountain(Transmitter *tx)
 
         // free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
+            debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
             assert(encwrapper->MaxAckID + 1 >= encwrapper->AckCnt);
             double local = (double)(encwrapper->MaxAckID + 1) - encwrapper->AckCnt / (double)(encwrapper->MaxAckID + 1);
             assert(local <= 1 && local >= 0);
