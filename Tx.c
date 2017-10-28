@@ -287,6 +287,8 @@ void Fountain(Transmitter *tx)
         assert(encwrapper->lrank > encwrapper->rrank);
         size_t pktbulen = sizeof(Packet) + tx->payload_size;
         double rate = 1.25 * tx->bw_est * (double)encwrapper->delta / (double)tx->totaldelta;
+        rate = max(rate, 500);
+        rate = min(rate, 2000);
 
         if (__GetToken(&encwrapper->tb, pktbulen, rate)) {
             tx->pktbuf->id = encwrapper->id;
