@@ -228,9 +228,8 @@ void CheckACK(Transmitter *tx)
                 encwrapper->rrank = max(encwrapper->rrank, msg.rank);
                 encwrapper->MaxAckID = max(encwrapper->MaxAckID, msg.esi);
                 encwrapper->AckCnt++;
-                debug("MaxAckID: %u, msg.esi: %u, AckCnt: %u\n",
-                      encwrapper->MaxAckID, msg.esi, encwrapper->AckCnt);
-
+//                debug("MaxAckID: %u, msg.esi: %u, AckCnt: %u\n",
+//                      encwrapper->MaxAckID, msg.esi, encwrapper->AckCnt);
 //                debug("enc[%u] lrank updated: %u\n", encwrapper->id, encwrapper->lrank);
             }
         }
@@ -246,12 +245,12 @@ void Fountain(Transmitter *tx)
 
         // free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
-            debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
+//            debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
             assert(encwrapper->MaxAckID + 1 >= encwrapper->AckCnt);
             double local = (double)((encwrapper->MaxAckID + 1) - encwrapper->AckCnt) / (double)(encwrapper->MaxAckID + 1);
             assert(local <= 1 && local >= 0);
-            tx->LossRate = (uint8_t)(local * 100) * (1 - 0.5) + tx->LossRate * 0.5;
-            debug("Loss Rate: %hhu\n", tx->LossRate);
+            tx->LossRate = ((uint8_t)(local * 100) * (1 - 0.5) + tx->LossRate * 0.5);
+            debug("Local LR: %lf, Global LR: %hhu\n", local * 100, tx->LossRate);
 //            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
