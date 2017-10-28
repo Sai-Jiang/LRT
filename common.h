@@ -85,15 +85,22 @@ typedef struct {
     uint32_t lrank, rrank;
     uint8_t  *pblk;
     TokenBucket tb;
+
+    uint32_t NextEsi;
+    uint32_t MaxAckID;
+    uint32_t AckCnt;
+    uint32_t LastLRUpdateTs;
 } EncWrapper;
 
 typedef struct {
-    uint32_t id;
+    uint32_t sbn;
+    uint32_t esi;
     uint8_t data[0];
 } Packet;
 
 typedef struct {
-    uint32_t id;
+    uint32_t sbn;
+    uint32_t esi;
     uint32_t rank;
 } AckMsg;
 
@@ -116,6 +123,7 @@ typedef struct {
 
     int DataSock, SignalSock;
 
+    uint8_t LossRate; // Unit: %
 } Transmitter;
 
 typedef struct {

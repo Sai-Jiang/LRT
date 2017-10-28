@@ -76,9 +76,10 @@ void CheckPkt(Receiver *rx) {
         assert(nbytes == sizeof(Packet) + rx->payload_size);
 
         // Discard the out-of-date packet & Send full-rank feedback
-        if (rx->pktbuf->id < rx->ExpectedBlockID) {
+        if (rx->pktbuf->sbn < rx->ExpectedBlockID) {
             AckMsg ack;
-            ack.id = rx->pktbuf->id;
+            ack.sbn = rx->pktbuf->sbn;
+            ack.esi = rx->pktbuf->esi;
             ack.rank = rx->maxsymbol;
             send(rx->SignalSock, &ack, sizeof(ack), 0);
             continue;
@@ -93,7 +94,7 @@ void CheckPkt(Receiver *rx) {
             nxt = p->next;
             ChainedPkt *entry = iqueue_entry(p, ChainedPkt, qnode);
 
-            if (entry->pkt->id >= rx->ExpectedBlockID) break;
+            if (entry->pkt->sbn >= rx->ExpectedBlockID) break;
 
             iqueue_del(p);
             free(entry->pkt);
@@ -106,7 +107,7 @@ void CheckPkt(Receiver *rx) {
             prev = p->prev;
             ChainedPkt *entry = iqueue_entry(p, ChainedPkt, qnode);
 
-            if (cpkt->pkt->id >= entry->pkt->id) break;
+            if (cpkt->pkt->sbn >= entry->pkt->sbn) break;
         }
 
         cpkt->qnode.prev = p;
@@ -121,7 +122,7 @@ void MovPkt2Dec(Receiver *rx)
 {
     while (!iqueue_is_empty(&rx->pkt_queue)) {
         IQUEUE_HEAD(sameid);
-        uint32_t id = (iqueue_entry(rx->pkt_queue.next, ChainedPkt, qnode))->pkt->id;
+        uint32_t id = (iqueue_entry(rx->pkt_queue.next, ChainedPkt, qnode))->pkt->sbn;
         int npkts = 0;
 
         // detach a list of packets of the same id, at least one
@@ -129,7 +130,7 @@ void MovPkt2Dec(Receiver *rx)
             nxt = p->next;
             ChainedPkt *cpkt = iqueue_entry(p, ChainedPkt, qnode);
 
-            if (cpkt->pkt->id == id) {
+            if (cpkt->pkt->sbn == id) {
                 iqueue_del(p);
                 iqueue_add_tail(p, &sameid);
                 npkts++;
@@ -174,7 +175,8 @@ void MovPkt2Dec(Receiver *rx)
                 kodoc_read_payload(decwrapper->dec, cpkt->pkt->data);
 
             AckMsg ack;
-            ack.id = cpkt->pkt->id;
+            ack.sbn = cpkt->pkt->sbn;
+            ack.esi = cpkt->pkt->esi;
             ack.rank = kodoc_rank(decwrapper->dec);
             send(rx->SignalSock, &ack, sizeof(AckMsg), 0);
 
