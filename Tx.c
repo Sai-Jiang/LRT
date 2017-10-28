@@ -177,6 +177,7 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->pblk = malloc(tx->blksize);
             encwrapper->NextEsi = 0;
             encwrapper->MaxAckID = 0;
+            encwrapper->AckCnt = 0;
             TokenBucketInit(&encwrapper->tb, 1500); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
 //            debug("enc[%u] init, total %u\n", encwrapper->id, ++tx->enc_cnt);
