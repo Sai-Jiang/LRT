@@ -256,12 +256,18 @@ void Fountain(Transmitter *tx)
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-        } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
-                encwrapper->lrank > encwrapper->rrank) {
+            continue;
+        }
+
+        size_t pktbuflen = sizeof(Packet) + tx->payload_size;
+        uint32_t Extra = (encwrapper->lrank - encwrapper->rrank) * tx->LossRate / 100;
+        debug("enc[%u] extra %u repair symbol\n", encwrapper->id, Extra);
+        while (Extra > 0 && GetToken(&encwrapper->tb, pktbuflen)) {
             tx->pktbuf->sbn = encwrapper->id;
             tx->pktbuf->esi = encwrapper->NextEsi++;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
             send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            Extra--;
         }
     }
 }
@@ -272,7 +278,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 5000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1000); // equals to 1300Bps
 
     uint32_t seq = 0;
 
