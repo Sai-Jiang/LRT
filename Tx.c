@@ -248,7 +248,7 @@ void Fountain(Transmitter *tx)
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
             debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
             assert(encwrapper->MaxAckID + 1 >= encwrapper->AckCnt);
-            double local = (double)(encwrapper->MaxAckID + 1) - encwrapper->AckCnt / (double)(encwrapper->MaxAckID + 1);
+            double local = (double)((encwrapper->MaxAckID + 1) - encwrapper->AckCnt) / (double)(encwrapper->MaxAckID + 1);
             assert(local <= 1 && local >= 0);
             tx->LossRate = (uint8_t)(local * 100) * (1 - 0.5) + tx->LossRate * 0.5;
             debug("Loss Rate: %hhu\n", tx->LossRate);
