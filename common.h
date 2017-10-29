@@ -123,7 +123,7 @@ typedef struct {
 
     int DataSock, SignalSock;
 
-    uint8_t LossRate; // Unit: %
+    double LossRate; //
 
     double bw_est;
     double weight;

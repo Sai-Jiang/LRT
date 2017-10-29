@@ -257,7 +257,7 @@ void CheckACK(Transmitter *tx)
     long diff = now - tx->lasttime;
     if (diff >= 2) {
         double bw = (double)tx->payload_size * tx->ackcnt / (double)diff;
-        tx->bw_est = (1 - tx->weight) * tx->bw_est + tx->weight * bw;
+        tx->bw_est = 1.25 * ((1 - tx->weight) * tx->bw_est + tx->weight * bw);
         debug("bw_est: %lf\n", tx->bw_est);
         tx->ackcnt = 0;
         tx->lasttime = now;
@@ -277,21 +277,19 @@ void Fountain(Transmitter *tx)
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
 //            debug("MaxAckID: %u, AckCnt: %u\n", encwrapper->MaxAckID, encwrapper->AckCnt);
             assert(encwrapper->MaxAckID + 1 >= encwrapper->AckCnt);
-            double local = (double)((encwrapper->MaxAckID + 1) - encwrapper->AckCnt) / (double)(encwrapper->MaxAckID + 1);
-            assert(local <= 1 && local >= 0);
-            tx->LossRate = ((uint8_t)(local * 100) * (1 - 0.5) + tx->LossRate * 0.5);
-            debug("Local LR: %lf, Global LR: %hhu\n", local * 100, tx->LossRate);
+            double LossRate = (double)((encwrapper->MaxAckID + 1) - encwrapper->AckCnt) / (double)(encwrapper->MaxAckID + 1);
+            tx->LossRate = LossRate * (1 - 0.5) + tx->LossRate * 0.5;
+            debug("Local LR: %lf, Global LR: %lf\n", LossRate, tx->LossRate);
 //            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-            continue;
+        } else {
+            assert(encwrapper->lrank >= encwrapper->rrank);
+            encwrapper->delta = encwrapper->lrank - encwrapper->rrank;
+            tx->totaldelta += encwrapper->delta;
         }
-
-        assert(encwrapper->lrank >= encwrapper->rrank);
-        encwrapper->delta = encwrapper->lrank - encwrapper->rrank;
-        tx->totaldelta += encwrapper->delta;
     }
 
     for (iqueue_head *p = tx->enc_queue.next, *nxt; p != &tx->enc_queue; p = nxt) {
@@ -301,11 +299,10 @@ void Fountain(Transmitter *tx)
         if (encwrapper->delta == 0) continue;
 
         size_t pktbuflen = sizeof(Packet) + tx->payload_size;
-        double rate = 1.25 * tx->bw_est * (double)encwrapper->delta / (double)tx->totaldelta;
-        rate = max(rate, 500); rate = min(rate, 2000);
+        double rate = tx->bw_est * (double)encwrapper->delta / (double)tx->totaldelta;
+        rate = max(rate, 200); rate = min(rate, 1200);
 
-        uint32_t Extra = encwrapper->delta * tx->LossRate / 100;
-
+        uint32_t Extra = (uint32_t)(encwrapper->delta * tx->LossRate + 1);
         while (Extra > 0 && __GetToken(&encwrapper->tb, pktbuflen, rate)) {
             tx->pktbuf->sbn = encwrapper->id;
             tx->pktbuf->esi = encwrapper->NextEsi++;
