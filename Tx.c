@@ -70,6 +70,8 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
     assert(tx->payload_size < 1500);
 
+    tx->LossRate = 0.2;
+
     struct sockaddr_in addr;
 
     tx->DataSock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -175,7 +177,8 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->lrank = encwrapper->rrank = 0;
             encwrapper->id = tx->NextBlockID++;
             encwrapper->pblk = malloc(tx->blksize);
-            TokenBucketInit(&encwrapper->tb, 1500); // 5ms Gap
+            encwrapper->nmore = 0;
+            TokenBucketInit(&encwrapper->tb, 1000); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
             debug("enc[%u] init, total %u\n", encwrapper->id, ++tx->enc_cnt);
         } else {
@@ -190,6 +193,7 @@ void MovSym2Enc(Transmitter *tx)
             nxt = p->next;
             sym = iqueue_entry(p, Symbol, qnode);
 
+            encwrapper->nmore++;
             void *pdst = encwrapper->pblk + encwrapper->lrank * tx->maxsymbolsize;
             memcpy(pdst, sym->data, tx->maxsymbolsize);
             kodoc_set_const_symbol(encwrapper->enc, encwrapper->lrank, pdst, tx->maxsymbolsize);
@@ -242,11 +246,17 @@ void Fountain(Transmitter *tx)
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
             free(encwrapper);
-        } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
-                encwrapper->lrank > encwrapper->rrank) {
+            continue;
+        }
+
+        size_t pktbuflen = sizeof(Packet) + tx->payload_size;
+        encwrapper->nmore = (uint32_t )(encwrapper->nmore * tx->LossRate + 1);
+        debug("enc[%u] nmore: %u\n", encwrapper->id, encwrapper->nmore);
+        for (uint32_t i = 0; i < encwrapper->nmore &&
+                GetToken(&encwrapper->tb, pktbuflen); i++) {
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            send(tx->DataSock, tx->pktbuf, pktbuflen, 0);
         }
     }
 }
@@ -257,7 +267,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 5000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1000); // equals to 1300Bps
 
     uint32_t seq = 0;
 
