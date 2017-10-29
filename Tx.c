@@ -70,6 +70,8 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
     assert(tx->payload_size < 1500);
 
+    tx->LossRate = 0.5;
+
     struct sockaddr_in addr;
 
     tx->DataSock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -175,7 +177,8 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->lrank = encwrapper->rrank = 0;
             encwrapper->id = tx->NextBlockID++;
             encwrapper->pblk = malloc(tx->blksize);
-            TokenBucketInit(&encwrapper->tb, 1500); // 5ms Gap
+            encwrapper->nmore = 0;
+            TokenBucketInit(&encwrapper->tb, 200); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
             debug("enc[%u] init, total %u\n", encwrapper->id, ++tx->enc_cnt);
         } else {
@@ -195,9 +198,20 @@ void MovSym2Enc(Transmitter *tx)
             kodoc_set_const_symbol(encwrapper->enc, encwrapper->lrank, pdst, tx->maxsymbolsize);
             encwrapper->lrank = kodoc_rank(encwrapper->enc);
 
+            // send source symbol
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
             send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            encwrapper->nmore += tx->LossRate;
+
+            // send appending repair symbol
+            while (encwrapper->nmore >= 1) {
+                tx->pktbuf->id = encwrapper->id;
+                kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
+                send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+                encwrapper->nmore -= 1;
+                encwrapper->nmore += tx->LossRate;
+            }
 
             iqueue_del(&sym->qnode);
             free(sym);
@@ -257,7 +271,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 5000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1000); // equals to 1300Bps
 
     uint32_t seq = 0;
 

@@ -85,6 +85,7 @@ typedef struct {
     uint32_t lrank, rrank;
     uint8_t  *pblk;
     TokenBucket tb;
+    float nmore;
 } EncWrapper;
 
 typedef struct {
@@ -116,6 +117,7 @@ typedef struct {
 
     int DataSock, SignalSock;
 
+    float LossRate;
 } Transmitter;
 
 typedef struct {
