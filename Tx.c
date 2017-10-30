@@ -155,7 +155,7 @@ void Div2Sym(Transmitter *tx)
 
 void MovSym2Enc(Transmitter *tx)
 {
-    while (!iqueue_is_empty(&tx->sym_queue) && tx->enc_cnt <= ENCWNDSZ) {
+    while (!iqueue_is_empty(&tx->sym_queue) && tx->enc_cnt < ENCWNDSZ) {
         EncWrapper *encwrapper = NULL;
 
         if (iqueue_is_empty(&tx->enc_queue) ||
