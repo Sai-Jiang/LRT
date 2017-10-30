@@ -115,7 +115,7 @@ typedef struct {
     Packet *pktbuf;
     uint32_t payload_size;
 
-    int DataSock, SignalSock;
+    int sock;
 
     float LossRate;
 } Transmitter;
@@ -153,7 +153,11 @@ typedef struct {
 
     iqueue_head src_queue;
 
-    int DataSock, SignalSock;
+    int sock;
+
+    struct sockaddr_in RemoteAddr;
+    socklen_t RemoteAddrLen;
+
 } Receiver;
 
 #endif //LLRTP_COMMON_H
