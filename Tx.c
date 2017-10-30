@@ -196,7 +196,7 @@ void MovSym2Enc(Transmitter *tx)
             while (encwrapper->nmore >= 1) {
                 tx->pktbuf->id = encwrapper->id;
                 kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-                send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+                send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
                 encwrapper->nmore -= 1;
                 encwrapper->nmore += tx->LossRate;
             }
