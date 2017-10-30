@@ -29,24 +29,16 @@ Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     rx->ExpectedBlockID = rx->ExpectedSymbolID = 0;
 
+    rx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
-
-    rx->DataSock = socket(PF_INET, SOCK_DGRAM, 0);
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htons(INADDR_ANY);
     addr.sin_port = htons(DST_DPORT);
-    assert(bind(rx->DataSock, (struct sockaddr *)&addr, sizeof(addr)) >= 0);
+    assert(bind(rx->sock, (struct sockaddr *)&addr, sizeof(addr)) >= 0);
 
-    rx->SignalSock = socket(PF_INET, SOCK_DGRAM, 0);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    inet_pton(PF_INET, SRC_IP, &addr.sin_addr);
-    addr.sin_port = htons(SRC_SPORT);
-    connect(rx->SignalSock, (struct sockaddr *)&addr, sizeof(addr));
-
-    int flags = fcntl(rx->DataSock, F_GETFL, 0);
-    fcntl(rx->DataSock, F_SETFL, flags | O_NONBLOCK);
+    memset(&rx->RemoteAddr, 0, sizeof(struct sockaddr_in));
+    rx->RemoteAddrLen = 0;
 
     return rx;
 }
@@ -58,8 +50,7 @@ void Receiver_Release(Receiver *rx)
     assert(iqueue_is_empty(&rx->sym_queue));
     assert(iqueue_is_empty(&rx->src_queue));
 
-    close(rx->DataSock);
-    close(rx->SignalSock);
+    close(rx->sock);
     kodoc_delete_factory(rx->dec_factory);
     free(rx->pktbuf);
     free(rx);
@@ -71,7 +62,8 @@ void CheckPkt(Receiver *rx) {
     long EntTS = GetTS();
 
     while (GetTS() - EntTS <= 1) {
-        ssize_t nbytes = recv(rx->DataSock, rx->pktbuf, pktbuflen, 0);
+        ssize_t nbytes = recvfrom(rx->sock, rx->pktbuf, pktbuflen, MSG_DONTWAIT,
+                                  (struct sockaddr *)&rx->RemoteAddr, &rx->RemoteAddrLen);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(Packet) + rx->payload_size);
 
@@ -80,7 +72,8 @@ void CheckPkt(Receiver *rx) {
             AckMsg ack;
             ack.id = rx->pktbuf->id;
             ack.rank = rx->maxsymbol;
-            send(rx->SignalSock, &ack, sizeof(ack), 0);
+            sendto(rx->sock, &ack, sizeof(ack), 0,
+                   (struct sockaddr *)&rx->RemoteAddr, rx->RemoteAddrLen);
             continue;
         }
 
@@ -176,7 +169,8 @@ void MovPkt2Dec(Receiver *rx)
             AckMsg ack;
             ack.id = cpkt->pkt->id;
             ack.rank = kodoc_rank(decwrapper->dec);
-            send(rx->SignalSock, &ack, sizeof(AckMsg), 0);
+            sendto(rx->sock, &ack, sizeof(AckMsg), 0,
+                   (struct sockaddr *)&rx->RemoteAddr, rx->RemoteAddrLen);
 
             iqueue_del(p);
             free(cpkt->pkt);

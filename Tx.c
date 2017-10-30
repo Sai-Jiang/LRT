@@ -70,24 +70,13 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
     assert(tx->payload_size < 1500);
 
+    tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
-
-    tx->DataSock = socket(PF_INET, SOCK_DGRAM, 0);
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     inet_pton(PF_INET, DST_IP, &addr.sin_addr);
     addr.sin_port = htons(DST_DPORT);
-    connect(tx->DataSock, (struct sockaddr *) &addr, sizeof(addr));
-
-    tx->SignalSock = socket(PF_INET, SOCK_DGRAM, 0);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(SRC_SPORT);
-    int rval = bind(tx->SignalSock, (struct sockaddr *)&addr, sizeof(struct sockaddr));
-    assert(rval >= 0);
-    int flags = fcntl(tx->SignalSock, F_GETFL, 0);
-    fcntl(tx->SignalSock, F_SETFL, flags | O_NONBLOCK);
+    connect(tx->sock, (struct sockaddr *) &addr, sizeof(addr));
 
     return tx;
 }
@@ -102,8 +91,7 @@ void Transmitter_Release(Transmitter *tx)
 
     free(tx->pktbuf);
 
-    close(tx->DataSock);
-    close(tx->SignalSock);
+    close(tx->sock);
 
     free(tx);
 }
@@ -197,7 +185,7 @@ void MovSym2Enc(Transmitter *tx)
 
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
 
             iqueue_del(&sym->qnode);
             free(sym);
@@ -210,7 +198,7 @@ void CheckACK(Transmitter *tx)
     AckMsg msg;
 
     while (true) {
-        ssize_t nbytes = read(tx->SignalSock, &msg, sizeof(msg));
+        ssize_t nbytes = recv(tx->sock, &msg, sizeof(msg), MSG_DONTWAIT);
         if (nbytes < 0) break;
         assert(nbytes == sizeof(msg));
 
@@ -246,7 +234,7 @@ void Fountain(Transmitter *tx)
                 encwrapper->lrank > encwrapper->rrank) {
             tx->pktbuf->id = encwrapper->id;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->DataSock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
         }
     }
 }
@@ -257,7 +245,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 5000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1000); // equals to 1300Bps
 
     uint32_t seq = 0;
 
