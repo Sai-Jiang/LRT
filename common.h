@@ -20,17 +20,18 @@
 #include "GenericQueue.h"
 #include "kodoc/kodoc.h"
 
-#define SRC_IP      "127.0.0.1"
-#define DST_IP      "127.0.0.1"
+#define DST_IP      "104.207.145.15"
+//#define DST_IP      "127.0.0.1"
 #define DST_DPORT   7777
-#define SRC_SPORT   8888
 
 #define MAXSYMBOL       (256)
 #define MAXSYMBOLSIZE   (1024)
 
+#define ENCWNDSZ        (5)
+
 #define LOOPCNT         (65536)
 
-#define INTENDEDLEN     (1500)
+#define INTENDEDLEN     (1600)
 
 #define PADLEN          (INTENDEDLEN - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 

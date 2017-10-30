@@ -70,7 +70,7 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
     assert(tx->payload_size < 1500);
 
-    tx->LossRate = 0.5;
+    tx->LossRate = 0.2;
 
     tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
@@ -155,7 +155,7 @@ void Div2Sym(Transmitter *tx)
 
 void MovSym2Enc(Transmitter *tx)
 {
-    while (!iqueue_is_empty(&tx->sym_queue)) {
+    while (!iqueue_is_empty(&tx->sym_queue) && tx->enc_cnt <= ENCWNDSZ) {
         EncWrapper *encwrapper = NULL;
 
         if (iqueue_is_empty(&tx->enc_queue) ||
@@ -166,9 +166,10 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->id = tx->NextBlockID++;
             encwrapper->pblk = malloc(tx->blksize);
             encwrapper->nmore = 0;
-            TokenBucketInit(&encwrapper->tb, 200); // 5ms Gap
+            TokenBucketInit(&encwrapper->tb, 100); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
-            debug("enc[%u] init, total %u\n", encwrapper->id, ++tx->enc_cnt);
+            tx->enc_cnt++;
+            debug("enc[%u] init, total %u\n", encwrapper->id, tx->enc_cnt);
         } else {
             encwrapper = iqueue_entry(tx->enc_queue.prev, EncWrapper, qnode);
         }
@@ -239,7 +240,8 @@ void Fountain(Transmitter *tx)
 
         // free the encoder that finished the job
         if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
-            debug("enc[%u] free, total %u\n", encwrapper->id, --tx->enc_cnt);
+            tx->enc_cnt--;
+            debug("enc[%u] free, total %u\n", encwrapper->id, tx->enc_cnt);
             iqueue_del(&encwrapper->qnode);
             free(encwrapper->pblk);
             kodoc_delete_coder(encwrapper->enc);
@@ -259,7 +261,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 1000); // equals to 1300Bps
+    TokenBucketInit(&tb, 300); // equals to 1300Bps
 
     uint32_t seq = 0;
 
