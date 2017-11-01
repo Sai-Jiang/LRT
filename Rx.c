@@ -38,7 +38,7 @@ Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     assert(bind(rx->sock, (struct sockaddr *)&addr, sizeof(addr)) >= 0);
 
     memset(&rx->RemoteAddr, 0, sizeof(struct sockaddr_in));
-    rx->RemoteAddrLen = 0;
+    rx->RemoteAddrLen = sizeof(struct sockaddr_in);
 
     return rx;
 }
@@ -166,16 +166,16 @@ void MovPkt2Dec(Receiver *rx)
             if (!kodoc_is_complete(decwrapper->dec))
                 kodoc_read_payload(decwrapper->dec, cpkt->pkt->data);
 
-            AckMsg ack;
-            ack.id = cpkt->pkt->id;
-            ack.rank = kodoc_rank(decwrapper->dec);
-            sendto(rx->sock, &ack, sizeof(AckMsg), 0,
-                   (struct sockaddr *)&rx->RemoteAddr, rx->RemoteAddrLen);
-
             iqueue_del(p);
             free(cpkt->pkt);
             free(cpkt);
         }
+
+        AckMsg ack;
+        ack.id = id;
+        ack.rank = kodoc_rank(decwrapper->dec);
+        sendto(rx->sock, &ack, sizeof(AckMsg), 0,
+               (struct sockaddr *)&rx->RemoteAddr, rx->RemoteAddrLen);
     }
 }
 
