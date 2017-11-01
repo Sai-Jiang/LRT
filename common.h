@@ -20,8 +20,8 @@
 #include "GenericQueue.h"
 #include "kodoc/kodoc.h"
 
-#define DST_IP      "104.207.145.15"
-//#define DST_IP      "127.0.0.1"
+//#define DST_IP      "104.207.145.15"
+#define DST_IP      "127.0.0.1"
 #define DST_DPORT   7777
 
 #define MAXSYMBOL       (256)
@@ -82,20 +82,25 @@ typedef struct {
 typedef struct {
     iqueue_head qnode;
     uint32_t id;
+    uint32_t NextEsi;
     kodoc_coder_t enc;
     uint32_t lrank, rrank;
     uint8_t  *pblk;
     TokenBucket tb;
     float nmore;
+    long MaxAckID;
+    long AckCnt;
 } EncWrapper;
 
 typedef struct {
-    uint32_t id;
+    uint32_t sbn;
+    uint32_t esi;
     uint8_t data[0];
 } Packet;
 
 typedef struct {
-    uint32_t id;
+    uint32_t sbn;
+    uint32_t esi;
     uint32_t rank;
 } AckMsg;
 
@@ -119,6 +124,10 @@ typedef struct {
     int sock;
 
     float LossRate;
+
+    long TotalMaxAckID;
+    long TotalAckCnt;
+    long LastUpdateTs;
 } Transmitter;
 
 typedef struct {

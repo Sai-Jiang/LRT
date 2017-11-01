@@ -72,6 +72,9 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     tx->LossRate = 0.2;
 
+    tx->TotalMaxAckID = tx->TotalAckCnt = 0;
+    tx->LastUpdateTs = GetTS();
+
     tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -164,8 +167,11 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->enc = kodoc_factory_build_coder(tx->enc_factory);
             encwrapper->lrank = encwrapper->rrank = 0;
             encwrapper->id = tx->NextBlockID++;
+            encwrapper->NextEsi = 0;
             encwrapper->pblk = malloc(tx->blksize);
             encwrapper->nmore = 0;
+            encwrapper->MaxAckID = -1;
+            encwrapper->AckCnt = 0;
             TokenBucketInit(&encwrapper->tb, 100); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
             tx->enc_cnt++;
@@ -188,14 +194,16 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->lrank = kodoc_rank(encwrapper->enc);
 
             // send source symbol
-            tx->pktbuf->id = encwrapper->id;
+            tx->pktbuf->sbn = encwrapper->id;
+            tx->pktbuf->esi = encwrapper->NextEsi++;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
             send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
             encwrapper->nmore += tx->LossRate;
 
             // send appending repair symbol
             while (encwrapper->nmore >= 1) {
-                tx->pktbuf->id = encwrapper->id;
+                tx->pktbuf->sbn = encwrapper->id;
+                tx->pktbuf->esi = encwrapper->NextEsi++;
                 kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
                 send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
                 encwrapper->nmore -= 1;
@@ -219,15 +227,35 @@ void CheckACK(Transmitter *tx)
 
         EncWrapper *encwrapper = NULL;
         iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
-            if (msg.id > encwrapper->id) continue;
-            else if (msg.id < encwrapper->id) break;
+            if (msg.sbn > encwrapper->id) continue;
+            else if (msg.sbn < encwrapper->id) break;
             else {
-                assert(msg.id == encwrapper->id);
+                assert(msg.sbn == encwrapper->id);
                 assert(msg.rank > 0 && msg.rank <= tx->maxsymbol);
                 encwrapper->rrank = max(encwrapper->rrank, msg.rank);
 //                debug("enc[%u] lrank updated: %u\n", encwrapper->id, encwrapper->lrank);
+
+                encwrapper->MaxAckID = max(encwrapper->MaxAckID, msg.esi);
+                encwrapper->AckCnt++;
             }
         }
+    }
+
+    long now = GetTS();
+
+    tx->TotalMaxAckID = tx->TotalAckCnt = 0;
+    EncWrapper *encwrapper = NULL;
+    iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
+        tx->TotalMaxAckID += (encwrapper->MaxAckID + 1);
+        tx->TotalAckCnt += encwrapper->AckCnt;
+    }
+
+    if (tx->TotalMaxAckID > 0 && (tx->TotalMaxAckID >= 100 || now - tx->LastUpdateTs >= 5)) {
+        double LossRate = ((double)(tx->TotalMaxAckID - tx->TotalAckCnt) / (double)tx->TotalMaxAckID);
+        if (LossRate > 0) debug("LossRate: %lf\n", LossRate);
+        tx->LossRate = max((float)LossRate, (float)0.05);
+        tx->LossRate = min(tx->LossRate, (float)0.5);
+        tx->LastUpdateTs = now;
     }
 }
 
@@ -248,7 +276,8 @@ void Fountain(Transmitter *tx)
             free(encwrapper);
         } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
                 encwrapper->lrank > encwrapper->rrank) {
-            tx->pktbuf->id = encwrapper->id;
+            tx->pktbuf->sbn = encwrapper->id;
+            tx->pktbuf->esi = encwrapper->NextEsi++;
             kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
             send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
         }
