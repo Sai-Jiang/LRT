@@ -18,5 +18,5 @@ link_libraries(kodoc)
 add_executable(Sender ${SOURCE_FILES} src/Tx.c test/TestSender.c)
 add_executable(Receiver ${SOURCE_FILES} src/Rx.c test/TestReceiver.c)
 
-target_link_libraries(Sender kodoc)
-target_link_libraries(Receiver kodoc)
+target_link_libraries(Sender kodoc pthread)
+target_link_libraries(Receiver kodoc pthread)

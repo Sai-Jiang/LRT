@@ -14,7 +14,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 30000); // equals to 1300Bps
+    TokenBucketInit(&tb, 1000); // equals to 1300Bps
 
     for (uint32_t seq = 0; seq < LOOPCNT; ) {
         if (GetToken(&tb, INTENDEDLEN) == false) {
