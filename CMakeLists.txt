@@ -3,7 +3,7 @@ project(LLRTP)
 
 set(CMAKE_C_STANDARD 99)
 
-set(SOURCE_FILES common.h GenericQueue.h)
+set(SOURCE_FILES include/LLRTP.h src/LLRTP.c)
 set(INClUDE_DIR ./include)
 set(LIB_DIR ./lib)
 
@@ -15,8 +15,8 @@ link_directories(${LIB_DIR})
 
 link_libraries(kodoc)
 
-add_executable(Sender ${SOURCE_FILES} Tx.c)
-add_executable(Receiver ${SOURCE_FILES} Rx.c)
+add_executable(Sender ${SOURCE_FILES} src/Tx.c test/TestSender.c)
+add_executable(Receiver ${SOURCE_FILES} src/Rx.c test/TestReceiver.c)
 
 target_link_libraries(Sender kodoc)
 target_link_libraries(Receiver kodoc)

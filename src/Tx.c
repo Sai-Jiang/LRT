@@ -1,112 +1,10 @@
 //
 // Created by Sai Jiang on 17/10/22.
 //
-#include "common.h"
+#include <LLRTP.h>
+#include "LLRTP.h"
 
 static const int32_t codec = kodoc_on_the_fly;
-
-void TokenBucketInit(TokenBucket *tb, double rate)
-{
-    tb->ts = GetTS();
-    tb->CurCapactiy = 0;
-    tb->MaxCapacity = 4096;
-    tb->LimitedRate = rate; // Unit: Byte/ms
-}
-
-void PutToken(TokenBucket *tb)
-{
-    if (tb->CurCapactiy >= tb->MaxCapacity) return;
-    long Now = GetTS();
-    assert(Now >= tb->ts);
-    uint32_t reload = (uint32_t)((Now - tb->ts) * tb->LimitedRate);
-    assert(reload >= 0);
-    if (reload > 0) {
-        tb->ts = Now;
-        tb->CurCapactiy = min(tb->CurCapactiy + reload, tb->MaxCapacity);
-    }
-}
-
-bool GetToken(TokenBucket *tb, size_t need)
-{
-    PutToken(tb);
-
-    bool rval = false;
-
-    if (tb->CurCapactiy >= need) {
-        tb->CurCapactiy -= need;
-        rval = true;
-    }
-//    if (need > 1200)
-//        printf("GetToken: %s\n", rval ? "True" : "False");
-
-    return rval;
-}
-
-Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
-{
-    assert(maxsymbolsize >= 512);
-
-    Transmitter *tx = malloc(sizeof(Transmitter));
-    assert(tx != NULL);
-
-    iqueue_init(&tx->src_queue);
-
-    iqueue_init(&tx->sym_queue);
-
-    iqueue_init(&tx->enc_queue);
-
-    tx->enc_cnt = 0;
-
-    tx->enc_factory = kodoc_new_encoder_factory(
-            codec, kodoc_binary8, maxsymbols, maxsymbolsize);
-
-    tx->maxsymbol = maxsymbols;
-    tx->maxsymbolsize = maxsymbolsize;
-    tx->blksize = tx->maxsymbol * tx->maxsymbolsize;
-
-    tx->NextBlockID = 0;
-
-    tx->payload_size = kodoc_factory_max_payload_size(tx->enc_factory);
-    tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
-    assert(tx->payload_size < 1500);
-
-    tx->LossRate = 0.2;
-
-    tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    inet_pton(PF_INET, DST_IP, &addr.sin_addr);
-    addr.sin_port = htons(DST_DPORT);
-    connect(tx->sock, (struct sockaddr *) &addr, sizeof(addr));
-
-    return tx;
-}
-
-void Transmitter_Release(Transmitter *tx)
-{
-    assert(iqueue_is_empty(&tx->src_queue));
-    assert(iqueue_is_empty(&tx->sym_queue));
-    assert(iqueue_is_empty(&tx->enc_queue));
-
-    kodoc_delete_factory(tx->enc_factory);
-
-    free(tx->pktbuf);
-
-    close(tx->sock);
-
-    free(tx);
-}
-
-size_t Send(Transmitter *tx, void *buf, size_t buflen)
-{
-    SrcData *inserted = malloc(sizeof(SrcData) + buflen);
-    inserted->Len = sizeof(inserted->Len) + buflen;
-    memcpy(inserted->rawdata, buf, buflen);
-    iqueue_add_tail(&inserted->qnode, &tx->src_queue);
-
-    return buflen;
-}
 
 void Div2Sym(Transmitter *tx)
 {
@@ -117,6 +15,7 @@ void Div2Sym(Transmitter *tx)
     psym = pdst = NULL;
     RestDstLen = 0;
 
+    pthread_mutex_lock(&tx->mlock);
     while (!iqueue_is_empty(&tx->src_queue)) {
         SrcData *psd = iqueue_entry(tx->src_queue.next, SrcData, qnode);
         psrc = psd->data;
@@ -145,6 +44,7 @@ void Div2Sym(Transmitter *tx)
         iqueue_del(&psd->qnode);
         free(psd);
     }
+    pthread_mutex_unlock(&tx->mlock);
 
     if (psym != NULL) {
         iqueue_add_tail(&psym->qnode, &tx->sym_queue);
@@ -255,37 +155,121 @@ void Fountain(Transmitter *tx)
     }
 }
 
-
-int main()
+bool AllLrankEqRrank(Transmitter *tx)
 {
-    Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
+    bool AllLrankEqRrank = true;
 
-    TokenBucket tb;
-    TokenBucketInit(&tb, 300); // equals to 1300Bps
+    EncWrapper *encwrapper = NULL;
+    iqueue_foreach(encwrapper, &tx->enc_queue, EncWrapper, qnode) {
+        AllLrankEqRrank = AllLrankEqRrank && (encwrapper->lrank == encwrapper->rrank);
+    }
 
-    uint32_t seq = 0;
+    return AllLrankEqRrank;
+}
 
-    UserData_t ud;
+void *TransmitterInst(void *arg)
+{
+    Transmitter *tx = (Transmitter *)arg;
 
     do {
-        while (seq < LOOPCNT && GetToken(&tb, sizeof(ud)))  {
-            ud.seq = seq++;
-            ud.ts = GetTS();
-            memset(ud.buf, 'a' + (ud.seq * 3 / 2) % 26, PADLEN);
-            Send(tx, &ud, sizeof(ud));
-        }
-
         Div2Sym(tx);
         MovSym2Enc(tx);
         CheckACK(tx);
         Fountain(tx);
+        usleep(100);
+    } while (tx->state == INITED ||
+             !iqueue_is_empty(&tx->src_queue) ||
+             !iqueue_is_empty(&tx->sym_queue) ||
+             !AllLrankEqRrank(tx));
 
-        usleep(20);
+    return arg;
+}
 
-    } while (seq < LOOPCNT ||
-            !iqueue_is_empty(&tx->src_queue) ||
-            !iqueue_is_empty(&tx->sym_queue) ||
-            !iqueue_is_empty(&tx->enc_queue));
+Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
+{
+    assert(maxsymbolsize >= 512);
 
-    Transmitter_Release(tx);
+    Transmitter *tx = malloc(sizeof(Transmitter));
+    assert(tx != NULL);
+
+            iqueue_init(&tx->src_queue);
+
+            iqueue_init(&tx->sym_queue);
+
+            iqueue_init(&tx->enc_queue);
+
+    tx->enc_cnt = 0;
+
+    tx->enc_factory = kodoc_new_encoder_factory(
+            codec, kodoc_binary8, maxsymbols, maxsymbolsize);
+
+    tx->maxsymbol = maxsymbols;
+    tx->maxsymbolsize = maxsymbolsize;
+    tx->blksize = tx->maxsymbol * tx->maxsymbolsize;
+
+    tx->NextBlockID = 0;
+
+    tx->payload_size = kodoc_factory_max_payload_size(tx->enc_factory);
+    tx->pktbuf = malloc(sizeof(Packet) + tx->payload_size);
+    assert(tx->payload_size < 1500);
+
+    tx->LossRate = 0.2;
+
+    tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(PF_INET, DST_IP, &addr.sin_addr);
+    addr.sin_port = htons(DST_DPORT);
+    connect(tx->sock, (struct sockaddr *) &addr, sizeof(addr));
+
+    tx->state = INITED; // shared but no need for protection for now.
+
+    pthread_mutex_init(&tx->mlock, NULL);
+    assert(pthread_create(&tx->tid, NULL, TransmitterInst, (void *)tx) == 0);
+
+    return tx;
+}
+
+void Transmitter_Release(Transmitter *tx)
+{
+    tx->state = RELEASED;   // shared but no need for protection for now
+
+    assert(pthread_join(tx->tid, NULL) == 0);
+    assert(pthread_mutex_destroy(&tx->mlock) == 0);
+
+    while (!iqueue_is_empty(&tx->enc_queue)) {
+        EncWrapper *encwrapper = iqueue_entry(tx->enc_queue.next, EncWrapper, qnode);
+        iqueue_head *p = tx->enc_queue.next;
+        iqueue_del(p);
+        kodoc_delete_coder(encwrapper->enc);
+        free(encwrapper->pblk);
+        free(encwrapper);
+    }
+
+    assert(iqueue_is_empty(&tx->src_queue));
+    assert(iqueue_is_empty(&tx->sym_queue));
+    assert(iqueue_is_empty(&tx->enc_queue));
+
+    kodoc_delete_factory(tx->enc_factory);
+
+    free(tx->pktbuf);
+
+    close(tx->sock);
+
+    free(tx);
+}
+
+
+ssize_t Send(Transmitter *tx, void *buf, size_t buflen)
+{
+    SrcData *inserted = malloc(sizeof(SrcData) + buflen);
+
+    inserted->Len = sizeof(inserted->Len) + buflen;
+    memcpy(inserted->rawdata, buf, buflen);
+    pthread_mutex_lock(&tx->mlock);
+    iqueue_add_tail(&inserted->qnode, &tx->src_queue);
+    pthread_mutex_unlock(&tx->mlock);
+
+    return buflen;
 }
