@@ -190,9 +190,9 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->lrank = kodoc_rank(encwrapper->enc);
 
             // send source symbol
-//            tx->pktbuf->id = encwrapper->id;
-//            kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-//            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            tx->pktbuf->id = encwrapper->id;
+            assert(kodoc_write_payload(encwrapper->enc, tx->pktbuf->data) > 0);
+            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
 //            encwrapper->nmore += tx->LossRate;
 //
 //            // send appending repair symbol
