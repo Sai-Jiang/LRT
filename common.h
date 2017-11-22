@@ -20,18 +20,18 @@
 #include "GenericQueue.h"
 #include "kodoc/kodoc.h"
 
-#define DST_IP      "104.207.145.15"
-//#define DST_IP      "127.0.0.1"
+//#define DST_IP      "104.207.145.15"
+#define DST_IP      "127.0.0.1"
 #define DST_DPORT   7777
 
-#define MAXSYMBOL       (256)
+#define MAXSYMBOL       (2)
 #define MAXSYMBOLSIZE   (1024)
 
-#define ENCWNDSZ        (5)
+#define ENCWNDSZ        (512)
 
 #define LOOPCNT         (65536)
 
-#define INTENDEDLEN     (1600)
+#define INTENDEDLEN     (MAXSYMBOLSIZE)
 
 #define PADLEN          (INTENDEDLEN - sizeof(uint16_t) - sizeof(uint32_t) - sizeof(long))
 
@@ -119,6 +119,8 @@ typedef struct {
     int sock;
 
     float LossRate;
+
+    TokenBucket tb;
 } Transmitter;
 
 typedef struct {

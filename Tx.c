@@ -3,7 +3,7 @@
 //
 #include "common.h"
 
-static const int32_t codec = kodoc_on_the_fly;
+static const int32_t codec = kodoc_seed;
 
 void TokenBucketInit(TokenBucket *tb, double rate)
 {
@@ -71,6 +71,8 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     assert(tx->payload_size < 1500);
 
     tx->LossRate = 0.2;
+
+    TokenBucketInit(&tx->tb, 400);
 
     tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
@@ -188,19 +190,19 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->lrank = kodoc_rank(encwrapper->enc);
 
             // send source symbol
-            tx->pktbuf->id = encwrapper->id;
-            kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
-            encwrapper->nmore += tx->LossRate;
-
-            // send appending repair symbol
-            while (encwrapper->nmore >= 1) {
-                tx->pktbuf->id = encwrapper->id;
-                kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-                send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
-                encwrapper->nmore -= 1;
-                encwrapper->nmore += tx->LossRate;
-            }
+//            tx->pktbuf->id = encwrapper->id;
+//            kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
+//            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+//            encwrapper->nmore += tx->LossRate;
+//
+//            // send appending repair symbol
+//            while (encwrapper->nmore >= 1) {
+//                tx->pktbuf->id = encwrapper->id;
+//                kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
+//                send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+//                encwrapper->nmore -= 1;
+//                encwrapper->nmore += tx->LossRate;
+//            }
 
             iqueue_del(&sym->qnode);
             free(sym);
@@ -238,19 +240,19 @@ void Fountain(Transmitter *tx)
         nxt = p->next;
         encwrapper = iqueue_entry(p, EncWrapper, qnode);
 
-        // free the encoder that finished the job
-        if (encwrapper->lrank == tx->maxsymbol && encwrapper->rrank == tx->maxsymbol) {
-            tx->enc_cnt--;
-            debug("enc[%u] free, total %u\n", encwrapper->id, tx->enc_cnt);
-            iqueue_del(&encwrapper->qnode);
-            free(encwrapper->pblk);
-            kodoc_delete_coder(encwrapper->enc);
-            free(encwrapper);
-        } else if (GetToken(&encwrapper->tb, sizeof(Packet) + tx->payload_size) &&
-                encwrapper->lrank > encwrapper->rrank) {
-            tx->pktbuf->id = encwrapper->id;
-            kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
-            send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+        if (encwrapper->lrank == tx->maxsymbol) {
+            if (encwrapper->rrank == tx->maxsymbol) {
+                tx->enc_cnt--;
+                debug("enc[%u] free, total %u\n", encwrapper->id, tx->enc_cnt);
+                        iqueue_del(&encwrapper->qnode);
+                free(encwrapper->pblk);
+                kodoc_delete_coder(encwrapper->enc);
+                free(encwrapper);
+            } else if (GetToken(&tx->tb, sizeof(Packet) + tx->payload_size)) {
+                tx->pktbuf->id = encwrapper->id;
+                kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
+                send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
+            }
         }
     }
 }
@@ -261,7 +263,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 300); // equals to 1300Bps
+    TokenBucketInit(&tb, 200); // equals to 1300Bps
 
     uint32_t seq = 0;
 

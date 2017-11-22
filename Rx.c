@@ -4,7 +4,7 @@
 
 #include "common.h"
 
-static const int32_t codec = kodoc_on_the_fly;
+static const int32_t codec = kodoc_seed;
 
 Receiver * Receiver_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 {
