@@ -166,7 +166,7 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->id = tx->NextBlockID++;
             encwrapper->pblk = malloc(tx->blksize);
             encwrapper->nmore = 0;
-            TokenBucketInit(&encwrapper->tb, 100); // 5ms Gap
+            TokenBucketInit(&encwrapper->tb, 120); // 5ms Gap
             iqueue_add_tail(&encwrapper->qnode, &tx->enc_queue);
             tx->enc_cnt++;
             debug("enc[%u] init, total %u\n", encwrapper->id, tx->enc_cnt);
@@ -194,12 +194,11 @@ void MovSym2Enc(Transmitter *tx)
             encwrapper->nmore += tx->LossRate;
 
             // send appending repair symbol
-            while (encwrapper->nmore >= 1) {
+            if (encwrapper->nmore >= 1) {
                 tx->pktbuf->id = encwrapper->id;
                 kodoc_write_payload(encwrapper->enc, tx->pktbuf->data);
                 send(tx->sock, tx->pktbuf, sizeof(Packet) + tx->payload_size, 0);
                 encwrapper->nmore -= 1;
-                encwrapper->nmore += tx->LossRate;
             }
 
             iqueue_del(&sym->qnode);
@@ -261,7 +260,7 @@ int main()
     Transmitter *tx = Transmitter_Init(MAXSYMBOL, MAXSYMBOLSIZE);
 
     TokenBucket tb;
-    TokenBucketInit(&tb, 300); // equals to 1300Bps
+    TokenBucketInit(&tb, 200); // equals to 1300Bps
 
     uint32_t seq = 0;
 
@@ -280,7 +279,7 @@ int main()
         CheckACK(tx);
         Fountain(tx);
 
-        usleep(20);
+        usleep(100);
 
     } while (seq < LOOPCNT ||
             !iqueue_is_empty(&tx->src_queue) ||

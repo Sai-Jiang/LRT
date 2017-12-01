@@ -187,7 +187,7 @@ void GenSym(Receiver *rx)
 
     if (decwrapper->id == rx->ExpectedBlockID) {
         while (kodoc_is_symbol_uncoded(decwrapper->dec, rx->ExpectedSymbolID)) {
-            debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
+            //debug("dec[%u] sym[%u] decoded\n", decwrapper->id, rx->ExpectedSymbolID);
 
             Symbol *sym = malloc(sizeof(Symbol) + rx->maxsymbolsize);
             void *src = decwrapper->pblk + rx->ExpectedSymbolID * rx->maxsymbolsize;
@@ -234,8 +234,8 @@ void ReSym2Src(Receiver *rx)
                 }
             }
 
-            debug("RestSrcLen: %zu, RestDstLen: %zu, MaxCopyable: %lu\n",
-                   RestSrcLen, RestDstLen, min(RestDstLen, RestSrcLen));
+            //debug("RestSrcLen: %zu, RestDstLen: %zu, MaxCopyable: %lu\n",
+              //     RestSrcLen, RestDstLen, min(RestDstLen, RestSrcLen));
             size_t MaxCopyable = min(RestSrcLen, RestDstLen);
             memcpy(pdst, psrc, MaxCopyable);
             pdst += MaxCopyable; psrc += MaxCopyable;
@@ -244,8 +244,9 @@ void ReSym2Src(Receiver *rx)
 
             if (RestDstLen == 0) {
                 assert(psd->Len == INTENDEDLEN);
-                debug("Add src, cnt: %u, seq: %u, len: %hu\n", ++rx->src_cnt,
-                       *(uint32_t *)(psd->rawdata), psd->Len);
+                ++rx->src_cnt;
+		//debug("Add src, cnt: %u, seq: %u, len: %hu\n", ++rx->src_cnt,
+                  //     *(uint32_t *)(psd->rawdata), psd->Len);
                 iqueue_add_tail(&psd->qnode, &rx->src_queue);
                 psd = pdst = NULL;
                 RestDstLen = 0;
@@ -264,7 +265,8 @@ int Recv(Receiver *rx, void *buf, size_t buflen)
     SrcData *psd = iqueue_entry(rx->src_queue.next, SrcData, qnode);
     assert(psd->Len >= sizeof(psd->Len));
     assert(buflen == psd->Len - sizeof(psd->Len));
-    debug("Del src: %u\n", --rx->src_cnt);
+    --rx->src_cnt;
+    //debug("Del src: %u\n", --rx->src_cnt);
     memcpy(buf, psd->rawdata, psd->Len - sizeof(psd->Len)); // copy rawdata
     iqueue_del(&psd->qnode);
     free(psd);
@@ -287,12 +289,13 @@ int main()
         ReSym2Src(rx);
 
         while (Recv(rx, &ud, sizeof(ud)) > 0) {
-            printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
+            printf("%u\t%ld\n", ud.seq, GetTS() - ud.ts);
 
             int i;
             for (i = 0; i < PADLEN && ud.buf[i] == ('a' + (ud.seq * 3 / 2) % 26); i++);
             assert(i == PADLEN);
         }
+	usleep(100);
     } while (seq < LOOPCNT ||
             !iqueue_is_empty(&rx->pkt_queue) ||
             !iqueue_is_empty(&rx->dec_queue) ||
