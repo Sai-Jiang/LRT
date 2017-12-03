@@ -24,7 +24,7 @@
 #define DST_IP      "127.0.0.1"
 #define DST_DPORT   7777
 
-#define MAXSYMBOL       (2)
+#define MAXSYMBOL       (21)
 #define MAXSYMBOLSIZE   (1024)
 
 #define ENCWNDSZ        (512)

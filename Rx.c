@@ -287,7 +287,7 @@ int main()
         ReSym2Src(rx);
 
         while (Recv(rx, &ud, sizeof(ud)) > 0) {
-            printf("[%u]Delay: %ld\n", ud.seq, GetTS() - ud.ts);
+            printf("%u\t%ld\n", ud.seq, GetTS() - ud.ts);
 
             int i;
             for (i = 0; i < PADLEN && ud.buf[i] == ('a' + (ud.seq * 3 / 2) % 26); i++);
