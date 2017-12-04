@@ -5,6 +5,15 @@
 
 static const int32_t codec = kodoc_on_the_fly;
 
+/*
+ * 令牌桶算法
+ * 用于限流
+ * 配合https://en.wikipedia.org/wiki/Token_bucket服用
+ *
+ * TokenBucketInit初始化
+ * PutToken往桶里倒水
+ * GetToken从桶里取水
+ */
 void TokenBucketInit(TokenBucket *tb, double rate)
 {
     tb->ts = GetTS();
@@ -42,6 +51,7 @@ bool GetToken(TokenBucket *tb, size_t need)
     return rval;
 }
 
+
 Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 {
     assert(maxsymbolsize >= 512);
@@ -49,6 +59,7 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
     Transmitter *tx = malloc(sizeof(Transmitter));
     assert(tx != NULL);
 
+    // 所有的数据结构全部用双向循环链表组织
     iqueue_init(&tx->src_queue);
 
     iqueue_init(&tx->sym_queue);
@@ -57,6 +68,7 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     tx->enc_cnt = 0;
 
+    // 编码器初始化
     tx->enc_factory = kodoc_new_encoder_factory(
             codec, kodoc_binary8, maxsymbols, maxsymbolsize);
 
@@ -72,6 +84,7 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     tx->LossRate = 0.2;
 
+    // 套接字初始化
     tx->sock = socket(PF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -82,7 +95,9 @@ Transmitter *Transmitter_Init(uint32_t maxsymbols, uint32_t maxsymbolsize)
 
     return tx;
 }
-
+/*
+ * 释放
+ */
 void Transmitter_Release(Transmitter *tx)
 {
     assert(iqueue_is_empty(&tx->src_queue));
@@ -98,6 +113,9 @@ void Transmitter_Release(Transmitter *tx)
     free(tx);
 }
 
+/*
+ * 用户发送数据时调用，类似socket send那个函数
+ */
 size_t Send(Transmitter *tx, void *buf, size_t buflen)
 {
     SrcData *inserted = malloc(sizeof(SrcData) + buflen);
@@ -108,6 +126,9 @@ size_t Send(Transmitter *tx, void *buf, size_t buflen)
     return buflen;
 }
 
+/*
+ * 用于把用户数据切割成一个一个symbol
+ */
 void Div2Sym(Transmitter *tx)
 {
     Symbol *psym;
@@ -153,11 +174,15 @@ void Div2Sym(Transmitter *tx)
     }
 }
 
+/*
+ * 将Symbol添加到编码器中
+ */
 void MovSym2Enc(Transmitter *tx)
 {
     while (!iqueue_is_empty(&tx->sym_queue) && tx->enc_cnt < ENCWNDSZ) {
         EncWrapper *encwrapper = NULL;
 
+        // 如果没有可用的编码器，就初始化一个新的并插入队列末尾；
         if (iqueue_is_empty(&tx->enc_queue) ||
                 iqueue_entry(tx->enc_queue.prev, EncWrapper, qnode)->lrank == tx->maxsymbol) {
             encwrapper = malloc(sizeof(EncWrapper));
@@ -176,6 +201,7 @@ void MovSym2Enc(Transmitter *tx)
 
         assert(encwrapper != NULL);
 
+        // 依次添加symbol到编码器中，立即发送source symbol；视条件发送repair symbol；
         Symbol *sym = NULL;
         for (iqueue_head *p = tx->sym_queue.next, *nxt;
              p != &tx->sym_queue && encwrapper->lrank < tx->maxsymbol; p = nxt) {
@@ -207,7 +233,9 @@ void MovSym2Enc(Transmitter *tx)
         }
     }
 }
-
+/*
+ * 用于接收反馈，更新rank
+ */
 void CheckACK(Transmitter *tx)
 {
     AckMsg msg;
@@ -231,6 +259,10 @@ void CheckACK(Transmitter *tx)
     }
 }
 
+/*
+ * 用于发送额外的编码包
+ * 依次遍历每一个编码器，条件符合就发送；
+ */
 void Fountain(Transmitter *tx)
 {
     EncWrapper *encwrapper = NULL;
@@ -255,6 +287,18 @@ void Fountain(Transmitter *tx)
     }
 }
 
+/*
+ *
+ * Div2Sym()
+ * MovSym2Enc()
+ * CheckACK()
+ * Fountain()
+ *
+ * 构成一个发送周期
+ *
+ *
+ * 暂时没有handshake啥的。。
+ */
 
 int main()
 {
